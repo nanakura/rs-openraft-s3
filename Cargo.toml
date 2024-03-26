@@ -1,0 +1,31 @@
+cargo-features = ["codegen-backend"]
+[package]
+name = "rs-s3-local"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ntex = { version = "1", features = ["tokio"] }
+clap = { version = "4.4.13", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+ntex-cors = "1.0.0"
+env_logger = "0.11.3"
+derive_more = "0.99.17"
+log = "0.4.20"
+rayon = "1.8"
+anyhow = "1.0.81"
+thiserror = "1.0.58"
+sha2 = "0.10.8"
+zstd = "0.13.0"
+hex = "0.4.3"
+serde-xml-rs = "0.6.0"
+
+[profile.dev]
+debug = 0
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
