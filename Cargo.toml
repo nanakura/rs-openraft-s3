@@ -21,6 +21,9 @@ sha2 = "0.10.8"
 zstd = "0.13.0"
 hex = "0.4.3"
 serde-xml-rs = "0.6.0"
+futures = "0.3.30"
+ntex-multipart = "1.0.0"
+snmalloc-rs = { version = "0.3.3", features = ["native-cpu"] }
 
 [profile.dev]
 debug = 0

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use hex::ToHex;
 use zstd::stream::read::Decoder;
 use zstd::stream::write::Encoder;
+
 #[derive(Serialize, Deserialize)]
 struct Metadata {
     name: String,
@@ -88,15 +89,17 @@ fn load_metadata(meta_file_path: &str) -> anyhow::Result<Metadata> {
     Ok(metadata)
 }
 
-// async fn multi_decompressed_reader(file_paths: &[String]) -> anyhow::Result<Box<dyn io::Read + Send>> {
-//     let mut readers = Vec::new();
-//     for file_path in file_paths {
-//         let file = fs::File::open(file_path)?;
-//         let decoder = Decoder::new(file)?;
-//         readers.push(Box::new(decoder) as Box<dyn io::Read + Send>);
-//     }
-//     Ok(Box::new(io::Cursor::new(tokio::io::AsyncReadExt::concat(&mut readers).await?)) as Box<dyn io::Read + Send>)
-// }
+pub(crate) async fn multi_decompressed_reader(file_paths: &[String]) -> anyhow::Result<Vec<Box<dyn io::Read + Send>>> {
+    let mut readers = Vec::new();
+    for file_path in file_paths {
+        let file = fs::File::open(file_path)?;
+        let decoder = Decoder::new(file)?;
+
+        readers.push(Box::new(decoder) as Box<dyn io::Read + Send>);
+    }
+
+    Ok(readers)
+}
 
 fn is_path_exist(hash: &str) -> bool {
     let path = path_from_hash(hash);
