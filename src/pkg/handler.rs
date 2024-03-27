@@ -4,7 +4,9 @@ use crate::pkg::fs;
 use crate::pkg::fs::{
     multi_decompressed_reader, save_file, sum_15bit_sha256, Metadata, ReadStream,
 };
-use crate::pkg::model::{Bucket, BucketWrapper, Content, ListBucketResp, ListBucketResult, Owner};
+use crate::pkg::model::{
+    Bucket, BucketWrapper, Content, HeadNotFoundResp, ListBucketResp, ListBucketResult, Owner,
+};
 use crate::pkg::util::date::date_format_to_second;
 use anyhow::Context;
 use futures::StreamExt;
@@ -72,8 +74,8 @@ pub(crate) async fn list_bucket() -> HandlerResponse {
 }
 
 #[derive(Deserialize)]
-struct GetBucketQueryParams {
-    prefix: Option<String>,
+pub struct GetBucketQueryParams {
+    pub prefix: Option<String>,
 }
 pub(crate) async fn get_bucket(
     req: web::HttpRequest,
@@ -172,7 +174,14 @@ pub(crate) async fn delete_bucket(req: web::HttpRequest) -> HandlerResponse {
     }
 }
 
-pub(crate) async fn init_chunk_or_combine_chunk(req: web::HttpRequest) -> HandlerResponse {
+#[derive(Deserialize)]
+pub struct InitChunkOrCombineQuery {
+    pub upload_id: Option<String>,
+}
+pub(crate) async fn init_chunk_or_combine_chunk(
+    req: web::HttpRequest,
+    Query(query): Query<InitChunkOrCombineQuery>,
+) -> HandlerResponse {
     let bucket_name: String = req
         .match_info()
         .query("bucket")
@@ -181,8 +190,17 @@ pub(crate) async fn init_chunk_or_combine_chunk(req: web::HttpRequest) -> Handle
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name);
-    Ok(HttpResponse::Ok().content_type("application/xml").finish())
+    if let Some(upload_id) = query.upload_id {
+        Ok(HttpResponse::Ok().content_type("application/xml").finish())
+    } else {
+        Ok(HttpResponse::Ok().content_type("application/xml").finish())
+    }
 }
+
+async fn init_chunk() {}
+
+async fn combine_chunk() {}
+
 pub(crate) async fn head_object(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = req
         .match_info()
@@ -198,9 +216,20 @@ pub(crate) async fn head_object(req: web::HttpRequest) -> HandlerResponse {
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
         .join(object_name);
-    Ok(HttpResponse::Ok().content_type("application/xml").finish())
+
+    do_head_object(file_path).await
 }
-pub(crate) async fn upload_file_or_upload_chunk(req: web::HttpRequest) -> HandlerResponse {
+
+#[derive(Deserialize)]
+pub struct UploadFileOrChunkQuery {
+    pub upload_id: Option<String>,
+    pub part_number: Option<String>,
+}
+pub(crate) async fn upload_file_or_upload_chunk(
+    req: web::HttpRequest,
+    body: web::types::Payload,
+    Query(query): Query<UploadFileOrChunkQuery>,
+) -> HandlerResponse {
     let bucket_name: String = req
         .match_info()
         .query("bucket")
@@ -211,19 +240,19 @@ pub(crate) async fn upload_file_or_upload_chunk(req: web::HttpRequest) -> Handle
         .query("object")
         .parse()
         .map_err(|_| BadRequest)?;
-    let object_suffix: String = req
-        .match_info()
-        .query("objectSuffix")
-        .parse()
-        .map_err(|_| BadRequest)?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
-        .join(object_name)
-        .join(object_suffix);
-    println!("short path");
-    Ok(HttpResponse::Ok().content_type("application/xml").finish())
+        .join(object_name);
+    match (query.upload_id, query.part_number) {
+        (Some(upload_id), Some(part_number)) => {
+            println!("short path");
+            Ok(HttpResponse::Ok().content_type("application/xml").finish())
+        }
+        _ => upload_file(file_path, body).await,
+    }
 }
+
 pub(crate) async fn delete_file(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = req
         .match_info()
@@ -239,23 +268,21 @@ pub(crate) async fn delete_file(req: web::HttpRequest) -> HandlerResponse {
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
         .join(object_name);
-    Ok(HttpResponse::Ok().content_type("application/xml").finish())
+    do_delete_file(file_path).await
 }
-async fn upload_file(req: web::HttpRequest, mut body: web::types::Payload) -> HandlerResponse {
-    let bucket_name: String = req
-        .match_info()
-        .query("bucket")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_name: String = req
-        .match_info()
-        .query("object")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let file_path = PathBuf::from(DATA_DIR)
-        .join(BASIC_PATH_SUFFIX)
-        .join(bucket_name)
-        .join(object_name);
+
+async fn do_delete_file(file_path: PathBuf) -> HandlerResponse {
+    let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
+    metainfo_file_path.push_str(".meta");
+    if std::fs::metadata(&metainfo_file_path).is_ok() {
+        std::fs::remove_file(&metainfo_file_path).context("删除文件失败")?;
+        return Ok(HttpResponse::Ok().content_type("application/xml").finish());
+    }
+    Ok(HttpResponse::NotFound()
+        .content_type("application/xml")
+        .finish())
+}
+async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> HandlerResponse {
     let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
     metainfo_file_path.push_str(".meta");
     let file_name = file_path
@@ -313,11 +340,40 @@ pub(crate) async fn head_object_longpath(req: web::HttpRequest) -> HandlerRespon
         .join(bucket_name)
         .join(object_name)
         .join(object_suffix);
+    do_head_object(file_path).await
+}
+
+async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
+    let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
+    metainfo_file_path.push_str(".meta");
+    if !std::fs::metadata(&metainfo_file_path).is_ok() {
+        let resp = HeadNotFoundResp {
+            no_exist: "1".to_string(),
+        };
+        let xml = to_string(&resp).context("")?;
+        return Ok(web::HttpResponse::NotFound()
+            .content_type("application/xml")
+            .body(xml));
+    }
+    let metainfo = fs::load_metadata(&metainfo_file_path).context("")?;
+
     Ok(web::HttpResponse::Ok()
         .content_type("application/xml")
+        .header("Content-Type", "application/octet-stream")
+        .header("Content-Length", metainfo.size)
+        .header(
+            "Content-Disposition",
+            format!("attachment; filename=\"{}\"", metainfo.name),
+        )
+        .header("Last-Modified", date_format_to_second(metainfo.time))
         .finish())
 }
-pub(crate) async fn upload_file_or_upload_chunk_longpath(req: web::HttpRequest) -> HandlerResponse {
+
+pub(crate) async fn upload_file_or_upload_chunk_longpath(
+    req: web::HttpRequest,
+    body: web::types::Payload,
+    Query(query): Query<UploadFileOrChunkQuery>,
+) -> HandlerResponse {
     let bucket_name: String = req
         .match_info()
         .query("bucket")
@@ -338,10 +394,13 @@ pub(crate) async fn upload_file_or_upload_chunk_longpath(req: web::HttpRequest) 
         .join(bucket_name)
         .join(object_name)
         .join(object_suffix);
-    println!("longpath");
-    Ok(web::HttpResponse::Ok()
-        .content_type("application/xml")
-        .finish())
+    match (query.upload_id, query.part_number) {
+        (Some(upload_id), Some(part_number)) => {
+            println!("long path");
+            Ok(HttpResponse::Ok().content_type("application/xml").finish())
+        }
+        _ => upload_file(file_path, body).await,
+    }
 }
 pub(crate) async fn delete_file_longpath(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = req
@@ -364,9 +423,7 @@ pub(crate) async fn delete_file_longpath(req: web::HttpRequest) -> HandlerRespon
         .join(bucket_name)
         .join(object_name)
         .join(object_suffix);
-    Ok(web::HttpResponse::Ok()
-        .content_type("application/xml")
-        .finish())
+    do_delete_file(file_path).await
 }
 pub(crate) async fn download_file_longpath(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = req
@@ -389,9 +446,7 @@ pub(crate) async fn download_file_longpath(req: web::HttpRequest) -> HandlerResp
         .join(bucket_name)
         .join(object_name)
         .join(object_suffix);
-    Ok(web::HttpResponse::Ok()
-        .content_type("application/xml")
-        .finish())
+    do_download_file(file_path).await
 }
 pub(crate) async fn download_file(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = req
@@ -408,16 +463,15 @@ pub(crate) async fn download_file(req: web::HttpRequest) -> HandlerResponse {
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
         .join(object_name);
+    do_download_file(file_path).await
+}
+
+async fn do_download_file(file_path: PathBuf) -> HandlerResponse {
     let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
     metainfo_file_path.push_str(".meta");
     let meta_info = fs::load_metadata(&metainfo_file_path)?;
-    let filename: String = req
-        .match_info()
-        .query("filename")
-        .parse()
-        .map_err(|_| BadRequest)?;
     let readers = multi_decompressed_reader(&meta_info.chunks[..]).await?;
-    let content_disposition = format!("attachment; filename=\"{}\"", filename);
+    let content_disposition = format!("attachment; filename=\"{}\"", meta_info.name);
     let body = ReadStream::new(readers);
     Ok(web::HttpResponse::Ok()
         .header("Content-Type", "application/octet-stream")

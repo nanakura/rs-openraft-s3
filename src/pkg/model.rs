@@ -61,6 +61,11 @@ pub struct Content {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct HeadNotFoundResp {
+    pub no_exist: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ObjectMetadata {
     pub content_type: String,
     pub content_length: i64,

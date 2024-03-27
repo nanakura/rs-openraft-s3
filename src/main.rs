@@ -4,7 +4,7 @@ mod pkg;
 
 use crate::pkg::handler::{
     create_bucket, delete_bucket, delete_file, delete_file_longpath, download_file,
-    download_file_longpath, get_bucket, get_suffix, head_bucket, head_object, head_object_longpath,
+    download_file_longpath, get_bucket, head_bucket, head_object, head_object_longpath,
     init_chunk_or_combine_chunk, list_bucket, upload_file_or_upload_chunk,
     upload_file_or_upload_chunk_longpath,
 };
