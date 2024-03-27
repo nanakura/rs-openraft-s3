@@ -5,6 +5,7 @@ mod pkg;
 use ntex::web;
 use ntex_cors::Cors;
 use ntex::web::middleware;
+use crate::pkg::handler::get;
 
 #[ntex::main]
 async fn main() ->anyhow::Result<()>{
@@ -14,7 +15,10 @@ async fn main() ->anyhow::Result<()>{
         let app = web::App::new()
             .wrap(cors)
             .wrap(middleware::Logger::default())
-            .service(pkg::handler::get);
+            .service(
+                web::resource("/s3")
+                    .route(web::get().to(get))
+            );
 
         app
     })

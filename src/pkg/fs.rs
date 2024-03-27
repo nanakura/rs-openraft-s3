@@ -11,18 +11,18 @@ use zstd::stream::read::Decoder;
 use zstd::stream::write::Encoder;
 
 #[derive(Serialize, Deserialize)]
-struct Metadata {
-    name: String,
-    size: i64,
+pub(crate) struct Metadata {
+    pub(crate) name: String,
+    pub(crate) size: usize,
     #[serde(rename="type")]
-    file_type: String,
-    time: SystemTime,
-    chunks: Vec<String>
+    pub(crate) file_type: String,
+    pub(crate) time: SystemTime,
+    pub(crate) chunks: Vec<String>
 }
 
 static PATH_PREFIX: &str = "file";
 
-fn path_from_hash(hash: &str)->PathBuf {
+pub(crate) fn path_from_hash(hash: &str)->PathBuf {
     let hash_prefix = &hash[0..1];
     let hash_subprefix = &hash[1..3];
     let hash_suffix = &hash[3..];
@@ -36,7 +36,7 @@ fn path_from_hash(hash: &str)->PathBuf {
     path
 }
 
-fn save_file(hash_code: &str, data: &[u8]) -> anyhow::Result<()> {
+pub(crate) fn save_file(hash_code: &str, data: &[u8]) -> anyhow::Result<()> {
     let file_path = path_from_hash(hash_code);
 
     fs::create_dir_all(file_path.parent().unwrap())?;
@@ -58,12 +58,12 @@ fn get_sha256_string(hash: &[u8]) -> String {
     hash_string[..15].to_uppercase()
 }
 
-fn sum_15bit_sha256(data: &[u8]) -> String {
+pub(crate) fn sum_15bit_sha256(data: &[u8]) -> String {
     let sha256 = get_sha256(data);
     get_sha256_string(&sha256)
 }
 
-fn compress_chunk(chunk: &[u8]) -> anyhow::Result<Vec<u8>> {
+pub(crate) fn compress_chunk(chunk: &[u8]) -> anyhow::Result<Vec<u8>> {
     let mut encoder = Encoder::new(Vec::new(), 0)?;
     encoder.write_all(chunk)?;
     let result = encoder.finish()?;
@@ -78,14 +78,14 @@ fn decompress_chunk(chunk_path: &str) -> anyhow::Result<Vec<u8>> {
     Ok(result)
 }
 
-fn save_metadata(meta_file_path: &str, metadata: &Metadata) -> anyhow::Result<()> {
+pub(crate) fn save_metadata(meta_file_path: &str, metadata: &Metadata) -> anyhow::Result<()> {
     let meta_bytes = serde_json::to_vec(metadata)?;
     fs::create_dir_all(Path::new(meta_file_path).parent().unwrap())?;
     fs::write(meta_file_path, meta_bytes)?;
     Ok(())
 }
 
-fn load_metadata(meta_file_path: &str) -> anyhow::Result<Metadata> {
+pub(crate) fn load_metadata(meta_file_path: &str) -> anyhow::Result<Metadata> {
     let metadata_bytes = fs::read(meta_file_path)?;
     let metadata = serde_json::from_slice(&metadata_bytes)?;
     Ok(metadata)
@@ -144,7 +144,7 @@ pub(crate) async fn multi_decompressed_reader(file_paths: &[String]) -> anyhow::
     Ok(readers)
 }
 
-fn is_path_exist(hash: &str) -> bool {
+pub(crate) fn is_path_exist(hash: &str) -> bool {
     let path = path_from_hash(hash);
     path.exists()
 }
