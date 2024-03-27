@@ -1,7 +1,9 @@
+use crate::pkg::util::date::date_format_to_second;
+use futures::stream::{self, StreamExt};
 use futures::Stream;
 use hex::ToHex;
 use ntex::util::Bytes;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{self, Read, Write};
@@ -16,24 +18,29 @@ pub(crate) struct Metadata {
     pub(crate) size: usize,
     #[serde(rename = "type")]
     pub(crate) file_type: String,
+    #[serde(serialize_with = "serialize_date")]
     pub(crate) time: SystemTime,
     pub(crate) chunks: Vec<String>,
 }
 
-static PATH_PREFIX: &str = "file";
+fn serialize_date<S>(date: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let formatted_date = date_format_to_second(date.clone());
+    serializer.serialize_str(&formatted_date)
+}
+static PATH_PREFIX: &str = "data/file";
 
 pub(crate) fn path_from_hash(hash: &str) -> PathBuf {
     let hash_prefix = &hash[0..1];
     let hash_subprefix = &hash[1..3];
     let hash_suffix = &hash[3..];
 
-    let mut path = PathBuf::new();
-    path.push(PATH_PREFIX);
-    path.push(hash_prefix);
-    path.push(hash_subprefix);
-    path.push(hash_suffix);
-
-    path
+    PathBuf::from(PATH_PREFIX)
+        .join(hash_prefix)
+        .join(hash_subprefix)
+        .join(hash_suffix)
 }
 
 pub(crate) fn save_file(hash_code: &str, data: &[u8]) -> anyhow::Result<()> {

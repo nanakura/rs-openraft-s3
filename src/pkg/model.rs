@@ -1,9 +1,12 @@
-use serde::{Deserialize, Serialize};
+use crate::pkg::util::date::date_format_to_second;
+use serde::{Deserialize, Serialize, Serializer};
 use std::time::SystemTime;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Bucket {
+    #[serde(rename = "Name")]
     pub name: String,
+    #[serde(rename = "CreationDate")]
     pub creation_date: String,
 }
 
@@ -15,7 +18,9 @@ pub struct CompleteMultipartUpload {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CompleteMultipartUploadResult {
+    #[serde(rename = "BucketName")]
     pub bucket_name: String,
+    #[serde(rename = "ObjectKey")]
     pub object_key: String,
     #[serde(rename = "ETag")]
     pub etag: String,
@@ -23,8 +28,11 @@ pub struct CompleteMultipartUploadResult {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InitiateMultipartUploadResult {
+    #[serde(rename = "Bucket")]
     pub bucket: String,
+    #[serde(rename = "ObjectKey")]
     pub object_key: String,
+    #[serde(rename = "UploadId")]
     pub upload_id: String,
 }
 
@@ -43,9 +51,6 @@ pub struct ListBucketResult {
     pub max_keys: u32,
     #[serde(rename = "IsTruncated")]
     pub is_truncated: bool,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    // #[serde(rename = "CommonPrefixes")]
-    // pub common_prefixes: Vec<String>,
     #[serde(rename = "Contents")]
     pub contents: Vec<Content>,
 }
@@ -55,13 +60,22 @@ pub struct Content {
     #[serde(rename = "Key")]
     pub key: String,
     #[serde(rename = "LastModified")]
+    #[serde(serialize_with = "serialize_date")]
     pub last_modified: SystemTime,
     #[serde(rename = "Size")]
     pub size: i64,
 }
+fn serialize_date<S>(date: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let formatted_date = date_format_to_second(date.clone());
+    serializer.serialize_str(&formatted_date)
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HeadNotFoundResp {
+    #[serde(rename = "NoExist")]
     pub no_exist: String,
 }
 
@@ -75,6 +89,7 @@ pub struct ObjectMetadata {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PartETag {
+    #[serde(rename = "PartNumber")]
     pub part_number: i32,
     #[serde(rename = "ETag")]
     pub etag: String,
@@ -82,8 +97,11 @@ pub struct PartETag {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct S3Object {
+    #[serde(rename = "BucketName")]
     pub bucket_name: String,
+    #[serde(rename = "Key")]
     pub key: String,
+    #[serde(rename = "MetaData")]
     pub metadata: ObjectMetadata,
 }
 
@@ -91,22 +109,28 @@ pub struct S3Object {
 pub struct UploadFileResp {
     #[serde(rename = "ETag")]
     pub etag: String,
+    #[serde(rename = "LastModified")]
     pub last_modified: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BucketWrapper {
+    #[serde(rename = "Bucket")]
     pub bucket: Bucket,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Owner {
+    #[serde(rename = "DisplayName")]
     pub display_name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListBucketResp {
+    #[serde(rename = "Id")]
     pub id: String,
+    #[serde(rename = "Owner")]
     pub owner: Owner,
+    #[serde(rename = "Buckets")]
     pub buckets: Vec<BucketWrapper>,
 }

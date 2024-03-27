@@ -8,14 +8,15 @@ use crate::pkg::model::{
     Bucket, BucketWrapper, Content, HeadNotFoundResp, ListBucketResp, ListBucketResult, Owner,
 };
 use crate::pkg::util::date::date_format_to_second;
-use anyhow::Context;
+use crate::pkg::util::file::get_file_type;
+use anyhow::{Context};
 use futures::StreamExt;
 use ntex::util::{BytesMut, Stream};
 use ntex::web;
 use ntex::web::types::Query;
 use ntex::web::HttpResponse;
+use quick_xml::se::to_string;
 use serde::Deserialize;
-use serde_xml_rs::to_string;
 use std::fs::read_dir;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -70,6 +71,70 @@ pub(crate) async fn list_bucket() -> HandlerResponse {
         };
         let xml = to_string(&list_res).context("序列化失败")?;
         Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use serde::Serialize;
+    #[test]
+    fn test1() {
+        let mut buckets = Vec::new();
+        buckets.push(BucketWrapper {
+            bucket: Bucket {
+                name: "xx".to_string(),
+                creation_date: "111".to_string(),
+            },
+        });
+        let list_res = ListBucketResp {
+            id: "20230529".to_string(),
+            owner: Owner {
+                display_name: "minioadmin".to_string(),
+            },
+            buckets,
+        };
+        let xml = to_string(&list_res);
+        assert!(xml.is_ok(), "序列化错误");
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct Person {
+        #[serde(rename = "FullName")]
+        full_name: String,
+        age: u32,
+        #[serde(rename = "Address")]
+        addresses: Vec<Address>,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct Address {
+        street: String,
+        city: String,
+        state: String,
+    }
+
+    #[test]
+    fn test2() {
+        let person = Person {
+            full_name: "John Doe".to_string(),
+            age: 30,
+            addresses: vec![
+                Address {
+                    street: "123 Main St".to_string(),
+                    city: "New York".to_string(),
+                    state: "NY".to_string(),
+                },
+                Address {
+                    street: "456 Elm St".to_string(),
+                    city: "Los Angeles".to_string(),
+                    state: "CA".to_string(),
+                },
+            ],
+        };
+        // Serialize to XML
+        let xml = to_string(&person);
+        assert!(xml.is_ok(), "序列化失败");
     }
 }
 
@@ -290,7 +355,12 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
         .context("解析文件名失败")?
         .to_string_lossy()
         .to_string();
-    let (file_size, _) = body.size_hint();
+    let tmp_filename = file_name.clone();
+    let file_type = get_file_type(&tmp_filename).unwrap_or("");
+    let file_size = match body.size_hint() {
+        (_, Some(sz)) => sz,
+        (sz, None) => sz,
+    };
     let mut bytes = BytesMut::new();
     while let Some(item) = body.next().await {
         let item = item.context("")?;
@@ -309,7 +379,7 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
     let metainfo = Metadata {
         name: file_name,
         size: file_size,
-        file_type: "".to_string(),
+        file_type: file_type.to_string(),
         time: SystemTime::now(),
         chunks: hashcodes,
     };
@@ -350,12 +420,12 @@ async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
         let resp = HeadNotFoundResp {
             no_exist: "1".to_string(),
         };
-        let xml = to_string(&resp).context("")?;
+        let xml = to_string(&resp).context("序列化失败")?;
         return Ok(web::HttpResponse::NotFound()
             .content_type("application/xml")
             .body(xml));
     }
-    let metainfo = fs::load_metadata(&metainfo_file_path).context("")?;
+    let metainfo = fs::load_metadata(&metainfo_file_path).context("获取元数据失败")?;
 
     Ok(web::HttpResponse::Ok()
         .content_type("application/xml")
