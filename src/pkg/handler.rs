@@ -19,7 +19,7 @@ struct Person {
 }
 
 type HandlerResponse = Result<HttpResponse, AppError>;
-pub(crate) async fn get() -> HandlerResponse {
+pub(crate) async fn list_bucket() -> HandlerResponse {
     let person = Person {
         name: "John Doe".to_owned(),
         age: 30,
@@ -30,7 +30,33 @@ pub(crate) async fn get() -> HandlerResponse {
     Ok(res)
 }
 
-#[web::post("/upload")]
+pub(crate) async fn get_bucket() -> HandlerResponse {
+    println!("get bucket");
+    Ok(HttpResponse::Ok().content_type("application/xml").finish())
+}
+pub(crate) async fn head_bucket() -> HandlerResponse {
+    Ok(HttpResponse::Ok().content_type("application/xml").finish())
+}
+pub(crate) async fn create_bucket() -> HandlerResponse {
+    Ok(HttpResponse::Ok().content_type("application/xml").finish())
+}
+pub(crate) async fn delete_bucket() -> HandlerResponse {
+    Ok(HttpResponse::Ok().content_type("application/xml").finish())
+}
+
+pub(crate) async fn init_chunk_or_combine_chunk() -> HandlerResponse {
+    Ok(HttpResponse::Ok().content_type("application/xml").finish())
+}
+pub(crate) async fn head_object() -> HandlerResponse {
+    Ok(HttpResponse::Ok().content_type("application/xml").finish())
+}
+pub(crate) async fn upload_file_or_upload_chunk() -> HandlerResponse {
+    println!("short path");
+    Ok(HttpResponse::Ok().content_type("application/xml").finish())
+}
+pub(crate) async fn delete_file() -> HandlerResponse {
+    Ok(HttpResponse::Ok().content_type("application/xml").finish())
+}
 async fn upload_file(mut body: web::types::Payload) -> HandlerResponse {
     let data_dir = "path/to/data/dir";
     let basic_path_suffix = "basic/path/suffix";
@@ -70,8 +96,25 @@ async fn upload_file(mut body: web::types::Payload) -> HandlerResponse {
     Ok(web::HttpResponse::Ok().content_type("application/xml").finish())
 }
 
-#[web::get("/download/{filename}*")]
-async fn download_file(req: web::HttpRequest) -> HandlerResponse {
+pub(crate) async fn get_suffix(req: web::HttpRequest) -> HandlerResponse {
+    println!("get suffix");
+    Ok(web::HttpResponse::Ok().content_type("application/xml").finish())
+}
+pub(crate) async fn head_object_longpath(req: web::HttpRequest) -> HandlerResponse {
+    Ok(web::HttpResponse::Ok().content_type("application/xml").finish())
+}
+pub(crate) async fn upload_file_or_upload_chunk_longpath(req: web::HttpRequest) -> HandlerResponse {
+    println!("longpath");
+    Ok(web::HttpResponse::Ok().content_type("application/xml").finish())
+}
+pub(crate) async fn delete_file_longpath(req: web::HttpRequest) -> HandlerResponse {
+    Ok(web::HttpResponse::Ok().content_type("application/xml").finish())
+}
+pub(crate) async fn get_suffix_longpath(req: web::HttpRequest) -> HandlerResponse {
+    println!("longpath");
+    Ok(web::HttpResponse::Ok().content_type("application/xml").finish())
+}
+pub(crate) async fn download_file(req: web::HttpRequest) -> HandlerResponse {
     let data_dir = "path/to/data/dir";
     let basic_path_suffix = "basic/path/suffix";
     let bucket_name = "example_bucket";

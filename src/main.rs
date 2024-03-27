@@ -5,7 +5,7 @@ mod pkg;
 use ntex::web;
 use ntex_cors::Cors;
 use ntex::web::middleware;
-use crate::pkg::handler::get;
+use crate::pkg::handler::{create_bucket, delete_bucket, delete_file, delete_file_longpath, download_file, get_bucket, get_suffix, get_suffix_longpath, head_bucket, head_object, head_object_longpath, init_chunk_or_combine_chunk, list_bucket, upload_file_or_upload_chunk, upload_file_or_upload_chunk_longpath};
 
 #[ntex::main]
 async fn main() ->anyhow::Result<()>{
@@ -16,8 +16,21 @@ async fn main() ->anyhow::Result<()>{
             .wrap(cors)
             .wrap(middleware::Logger::default())
             .service(
-                web::resource("/s3")
-                    .route(web::get().to(get))
+                web::scope("/s3")
+                    .route("/", web::get().to(list_bucket))
+                    .route("/{bucket}/", web::get().to(get_bucket))
+                    .route("/{bucket}/", web::head().to(head_bucket))
+                    .route("/{bucket}/", web::put().to(create_bucket))
+                    .route("/{bucket}/", web::delete().to(delete_bucket))
+                    .route("/{bucket}/", web::post().to(init_chunk_or_combine_chunk))
+                    .route("/{bucket}/{object}", web::head().to(head_object))
+                    .route("/{bucket}/{object}", web::put().to(upload_file_or_upload_chunk))
+                    .route("/{bucket}/{object}", web::delete().to(delete_file))
+                    .route("/{bucket}/{object}", web::get().to(get_suffix))
+                    .route("/{bucket}/{object}/{objectSuffix}*", web::head().to(head_object_longpath))
+                    .route("/{bucket}/{object}/{objectSuffix}*", web::put().to(upload_file_or_upload_chunk_longpath))
+                    .route("/{bucket}/{object}/{objectSuffix}*", web::delete().to(delete_file_longpath))
+                    .route("/{bucket}/{object}/{objectSuffix}*", web::get().to(get_suffix_longpath))
             );
 
         app
