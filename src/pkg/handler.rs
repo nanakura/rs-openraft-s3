@@ -9,18 +9,20 @@ use crate::pkg::model::{
 };
 use crate::pkg::util::date::date_format_to_second;
 use crate::pkg::util::file::get_file_type;
-use anyhow::{Context};
+use anyhow::Context;
+use chrono::Utc;
+use futures::future::ok;
+use futures::stream::once;
 use futures::StreamExt;
-use ntex::util::{BytesMut, Stream};
+use mime_guess::MimeGuess;
+use ntex::util::{Bytes, BytesMut, Stream};
 use ntex::web;
 use ntex::web::types::Query;
-use ntex::web::HttpResponse;
+use ntex::web::{HttpResponse, Responder};
 use quick_xml::se::to_string;
 use serde::Deserialize;
 use std::fs::read_dir;
 use std::path::{Path, PathBuf};
-use chrono::Utc;
-use mime_guess::MimeGuess;
 
 static DATA_DIR: &str = "data";
 static BASIC_PATH_SUFFIX: &str = "buckets";
@@ -284,7 +286,6 @@ pub(crate) async fn head_object(req: web::HttpRequest) -> HandlerResponse {
         .join(bucket_name)
         .join(object_name);
 
-    println!("filepath: {}", &file_path.as_path().to_string_lossy().to_string());
     do_head_object(file_path).await
 }
 
@@ -359,8 +360,10 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
         .to_string_lossy()
         .to_string();
     let tmp_filename = file_name.clone();
-    let file_type = MimeGuess::from_path(Path::new(&tmp_filename)).first_or_text_plain().to_string();
-    let file_size = match body.size_hint() {
+    let file_type = MimeGuess::from_path(Path::new(&tmp_filename))
+        .first_or_text_plain()
+        .to_string();
+    let mut file_size = match body.size_hint() {
         (_, Some(sz)) => sz,
         (sz, None) => sz,
     };
@@ -373,6 +376,9 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
     let mut hashcodes: Vec<String> = Vec::new();
     for chunk in chunks {
         let sha = sum_15bit_sha256(chunk);
+        if file_size == 0 {
+            file_size += chunk.len();
+        }
         hashcodes.push(sha.clone());
         if !fs::is_path_exist(&sha) {
             let compressed_chunk = fs::compress_chunk(chunk)?;
@@ -383,7 +389,7 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
         name: file_name,
         size: file_size,
         file_type: file_type.to_string(),
-        time:  Utc::now(),
+        time: Utc::now(),
         chunks: hashcodes,
     };
     fs::save_metadata(&metainfo_file_path, &metainfo)?;
@@ -428,17 +434,19 @@ async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
             .content_type("application/xml")
             .body(xml));
     }
-    let metainfo = fs::load_metadata(&metainfo_file_path).context("获取元数据失败")?;
+    let metainfo = fs::load_metadata(&metainfo_file_path)?;
 
     Ok(web::HttpResponse::Ok()
-        .content_type("application/xml")
-        .header("Content-Type", "application/octet-stream")
-        .header("Content-Length", metainfo.size)
+        .content_type(metainfo.file_type)
         .header(
             "Content-Disposition",
             format!("attachment; filename=\"{}\"", metainfo.name),
         )
-        .header("Last-Modified", metainfo.time.format("%Y-%m-%d %H:%M:%S").to_string())
+        .header(
+            "Last-Modified",
+            metainfo.time.format("%Y-%m-%d %H:%M:%S").to_string(),
+        )
+        .content_length(metainfo.size as u64)
         .finish())
 }
 

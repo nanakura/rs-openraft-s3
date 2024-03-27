@@ -1,4 +1,6 @@
-use crate::pkg::util::date::{serialize_date, deserialize_date};
+use crate::pkg::util::date::{deserialize_date, serialize_date};
+use anyhow::{anyhow, Context};
+use chrono::{DateTime, Utc};
 use futures::stream::{self, StreamExt};
 use futures::Stream;
 use hex::ToHex;
@@ -8,8 +10,6 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use anyhow::Context;
-use chrono::{DateTime, Utc};
 use zstd::stream::read::Decoder;
 use zstd::stream::write::Encoder;
 
@@ -19,11 +19,10 @@ pub struct Metadata {
     pub size: usize,
     #[serde(rename = "type")]
     pub file_type: String,
-    #[serde(serialize_with = "serialize_date", deserialize_with = "deserialize_date")]
+    //#[serde(serialize_with = "serialize_date", deserialize_with = "deserialize_date")]
     pub time: DateTime<Utc>,
     pub chunks: Vec<String>,
 }
-
 
 static PATH_PREFIX: &str = "data/file";
 
@@ -89,7 +88,7 @@ pub(crate) fn save_metadata(meta_file_path: &str, metadata: &Metadata) -> anyhow
 
 pub(crate) fn load_metadata(meta_file_path: &str) -> anyhow::Result<Metadata> {
     let metadata_bytes = fs::read(meta_file_path).context("元数据地址不存在")?;
-    let metadata = serde_json::from_slice(&metadata_bytes).context("元数据格式错误")?;
+    let metadata = serde_json::from_slice(&metadata_bytes).map_err(|err| anyhow!(err))?;
     Ok(metadata)
 }
 

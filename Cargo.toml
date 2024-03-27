@@ -24,7 +24,7 @@ futures = "0.3.30"
 ntex-multipart = "1.0.0"
 snmalloc-rs = { version = "0.3.3", features = ["native-cpu"] }
 ntex-files = "1.0.0"
-chrono = "0.4.35"
+chrono = { version = "0.4.35", features = ["serde"] }
 quick-xml = { version = "0.31.0", features = ["serialize"] }
 mime_guess = "2.0.4"
 

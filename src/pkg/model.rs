@@ -1,7 +1,7 @@
-use crate::pkg::util::date::{serialize_date, deserialize_date};
+use crate::pkg::util::date::{deserialize_date, serialize_date};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, Serializer};
 use std::time::SystemTime;
-use chrono::{DateTime, Utc};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Bucket {
@@ -61,7 +61,7 @@ pub struct Content {
     #[serde(rename = "Key")]
     pub key: String,
     #[serde(rename = "LastModified")]
-    #[serde(serialize_with = "serialize_date", deserialize_with = "deserialize_date")]
+    //#[serde(serialize_with = "serialize_date", deserialize_with = "deserialize_date")]
     pub last_modified: DateTime<Utc>,
     #[serde(rename = "Size")]
     pub size: i64,

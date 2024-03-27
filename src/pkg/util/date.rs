@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
-use std::time::SystemTime;
 use serde::{Deserialize, Serializer};
+use std::time::SystemTime;
 
 pub fn date_format_to_second(date: SystemTime) -> String {
     let date = DateTime::<Utc>::from(date);
@@ -21,15 +21,15 @@ pub fn utc_date_format() -> String {
     tag
 }
 pub fn serialize_date<S>(date: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
+where
+    S: Serializer,
 {
     let formatted_date = date.format("%Y-%m-%d %H:%M:%S").to_string();
     serializer.serialize_str(&formatted_date)
 }
 pub fn deserialize_date<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
-    where
-        D: serde::Deserializer<'de>,
+where
+    D: serde::Deserializer<'de>,
 {
     let date_str = String::deserialize(deserializer)?;
     DateTime::parse_from_str(&date_str, "%Y-%m-%d %H:%M:%S")
