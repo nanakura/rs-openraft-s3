@@ -1,5 +1,5 @@
-use thiserror::Error;
 use ntex::web;
+use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum AppError {
     #[error("error: `{0}`")]

@@ -1,12 +1,12 @@
+use futures::Stream;
+use hex::ToHex;
+use ntex::util::Bytes;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use futures::Stream;
-use sha2::{Sha256, Digest};
-use serde::{Deserialize, Serialize};
-use hex::ToHex;
-use ntex::util::Bytes;
 use zstd::stream::read::Decoder;
 use zstd::stream::write::Encoder;
 
@@ -14,15 +14,15 @@ use zstd::stream::write::Encoder;
 pub(crate) struct Metadata {
     pub(crate) name: String,
     pub(crate) size: usize,
-    #[serde(rename="type")]
+    #[serde(rename = "type")]
     pub(crate) file_type: String,
     pub(crate) time: SystemTime,
-    pub(crate) chunks: Vec<String>
+    pub(crate) chunks: Vec<String>,
 }
 
 static PATH_PREFIX: &str = "file";
 
-pub(crate) fn path_from_hash(hash: &str)->PathBuf {
+pub(crate) fn path_from_hash(hash: &str) -> PathBuf {
     let hash_prefix = &hash[0..1];
     let hash_subprefix = &hash[1..3];
     let hash_suffix = &hash[3..];
@@ -54,7 +54,7 @@ fn get_sha256(data: &[u8]) -> Vec<u8> {
 }
 
 fn get_sha256_string(hash: &[u8]) -> String {
-    let hash_string:String = hash.encode_hex();
+    let hash_string: String = hash.encode_hex();
     hash_string[..15].to_uppercase()
 }
 
@@ -104,7 +104,10 @@ impl ReadStream {
 impl Stream for ReadStream {
     type Item = io::Result<Bytes>;
 
-    fn poll_next(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Self::Item>> {
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
         let mut buffer = vec![0; 1024];
 
         let mut total_bytes_read = 0;
@@ -131,8 +134,9 @@ impl Stream for ReadStream {
     }
 }
 
-
-pub(crate) async fn multi_decompressed_reader(file_paths: &[String]) -> anyhow::Result<Vec<Box<dyn io::Read + Send + Unpin>>> {
+pub(crate) async fn multi_decompressed_reader(
+    file_paths: &[String],
+) -> anyhow::Result<Vec<Box<dyn io::Read + Send + Unpin>>> {
     let mut readers = Vec::new();
     for file_path in file_paths {
         let file = fs::File::open(file_path)?;
@@ -149,7 +153,10 @@ pub(crate) fn is_path_exist(hash: &str) -> bool {
     path.exists()
 }
 
-fn split_file(mut reader: Box<dyn io::Read + Send>, chunk_size: usize) -> anyhow::Result<Vec<String>> {
+fn split_file(
+    mut reader: Box<dyn io::Read + Send>,
+    chunk_size: usize,
+) -> anyhow::Result<Vec<String>> {
     let mut chunks = Vec::new();
     loop {
         let mut buffer = vec![0; chunk_size];
@@ -177,7 +184,5 @@ fn split_file(mut reader: Box<dyn io::Read + Send>, chunk_size: usize) -> anyhow
 mod test {
     use super::*;
     #[test]
-    fn test1() {
-
-    }
+    fn test1() {}
 }

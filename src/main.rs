@@ -2,13 +2,18 @@
 static ALLOC: snmalloc_rs::SnMalloc = snmalloc_rs::SnMalloc;
 mod pkg;
 
+use crate::pkg::handler::{
+    create_bucket, delete_bucket, delete_file, delete_file_longpath, download_file,
+    download_file_longpath, get_bucket, get_suffix, head_bucket, head_object, head_object_longpath,
+    init_chunk_or_combine_chunk, list_bucket, upload_file_or_upload_chunk,
+    upload_file_or_upload_chunk_longpath,
+};
 use ntex::web;
-use ntex_cors::Cors;
 use ntex::web::middleware;
-use crate::pkg::handler::{create_bucket, delete_bucket, delete_file, delete_file_longpath, download_file, get_bucket, get_suffix, get_suffix_longpath, head_bucket, head_object, head_object_longpath, init_chunk_or_combine_chunk, list_bucket, upload_file_or_upload_chunk, upload_file_or_upload_chunk_longpath};
+use ntex_cors::Cors;
 
 #[ntex::main]
-async fn main() ->anyhow::Result<()>{
+async fn main() -> anyhow::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
     web::HttpServer::new(move || {
         let cors = Cors::default();
@@ -24,19 +29,34 @@ async fn main() ->anyhow::Result<()>{
                     .route("/{bucket}/", web::delete().to(delete_bucket))
                     .route("/{bucket}/", web::post().to(init_chunk_or_combine_chunk))
                     .route("/{bucket}/{object}", web::head().to(head_object))
-                    .route("/{bucket}/{object}", web::put().to(upload_file_or_upload_chunk))
+                    .route(
+                        "/{bucket}/{object}",
+                        web::put().to(upload_file_or_upload_chunk),
+                    )
                     .route("/{bucket}/{object}", web::delete().to(delete_file))
-                    .route("/{bucket}/{object}", web::get().to(get_suffix))
-                    .route("/{bucket}/{object}/{objectSuffix}*", web::head().to(head_object_longpath))
-                    .route("/{bucket}/{object}/{objectSuffix}*", web::put().to(upload_file_or_upload_chunk_longpath))
-                    .route("/{bucket}/{object}/{objectSuffix}*", web::delete().to(delete_file_longpath))
-                    .route("/{bucket}/{object}/{objectSuffix}*", web::get().to(get_suffix_longpath))
+                    .route("/{bucket}/{object}", web::get().to(download_file))
+                    .route(
+                        "/{bucket}/{object}/{objectSuffix}*",
+                        web::head().to(head_object_longpath),
+                    )
+                    .route(
+                        "/{bucket}/{object}/{objectSuffix}*",
+                        web::put().to(upload_file_or_upload_chunk_longpath),
+                    )
+                    .route(
+                        "/{bucket}/{object}/{objectSuffix}*",
+                        web::delete().to(delete_file_longpath),
+                    )
+                    .route(
+                        "/{bucket}/{object}/{objectSuffix}*",
+                        web::get().to(download_file_longpath),
+                    ),
             );
 
         app
     })
-        .bind(("0.0.0.0", 8080))?
-        .run()
-        .await?;
+    .bind(("0.0.0.0", 8080))?
+    .run()
+    .await?;
     Ok(())
 }
