@@ -1,4 +1,4 @@
-use crate::pkg::util::date::date_format_to_second;
+use crate::pkg::util::date::{serialize_date, deserialize_date};
 use futures::stream::{self, StreamExt};
 use futures::Stream;
 use hex::ToHex;
@@ -8,28 +8,23 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use anyhow::Context;
+use chrono::{DateTime, Utc};
 use zstd::stream::read::Decoder;
 use zstd::stream::write::Encoder;
 
 #[derive(Serialize, Deserialize)]
-pub(crate) struct Metadata {
-    pub(crate) name: String,
-    pub(crate) size: usize,
+pub struct Metadata {
+    pub name: String,
+    pub size: usize,
     #[serde(rename = "type")]
-    pub(crate) file_type: String,
-    #[serde(serialize_with = "serialize_date")]
-    pub(crate) time: SystemTime,
-    pub(crate) chunks: Vec<String>,
+    pub file_type: String,
+    #[serde(serialize_with = "serialize_date", deserialize_with = "deserialize_date")]
+    pub time: DateTime<Utc>,
+    pub chunks: Vec<String>,
 }
 
-fn serialize_date<S>(date: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let formatted_date = date_format_to_second(date.clone());
-    serializer.serialize_str(&formatted_date)
-}
+
 static PATH_PREFIX: &str = "data/file";
 
 pub(crate) fn path_from_hash(hash: &str) -> PathBuf {
@@ -93,8 +88,8 @@ pub(crate) fn save_metadata(meta_file_path: &str, metadata: &Metadata) -> anyhow
 }
 
 pub(crate) fn load_metadata(meta_file_path: &str) -> anyhow::Result<Metadata> {
-    let metadata_bytes = fs::read(meta_file_path)?;
-    let metadata = serde_json::from_slice(&metadata_bytes)?;
+    let metadata_bytes = fs::read(meta_file_path).context("元数据地址不存在")?;
+    let metadata = serde_json::from_slice(&metadata_bytes).context("元数据格式错误")?;
     Ok(metadata)
 }
 

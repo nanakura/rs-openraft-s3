@@ -1,6 +1,7 @@
-use crate::pkg::util::date::date_format_to_second;
+use crate::pkg::util::date::{serialize_date, deserialize_date};
 use serde::{Deserialize, Serialize, Serializer};
 use std::time::SystemTime;
+use chrono::{DateTime, Utc};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Bucket {
@@ -60,17 +61,10 @@ pub struct Content {
     #[serde(rename = "Key")]
     pub key: String,
     #[serde(rename = "LastModified")]
-    #[serde(serialize_with = "serialize_date")]
-    pub last_modified: SystemTime,
+    #[serde(serialize_with = "serialize_date", deserialize_with = "deserialize_date")]
+    pub last_modified: DateTime<Utc>,
     #[serde(rename = "Size")]
     pub size: i64,
-}
-fn serialize_date<S>(date: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let formatted_date = date_format_to_second(date.clone());
-    serializer.serialize_str(&formatted_date)
 }
 
 #[derive(Debug, Serialize, Deserialize)]

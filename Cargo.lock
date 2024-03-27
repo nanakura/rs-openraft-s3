@@ -1336,6 +1336,7 @@ dependencies = [
  "futures",
  "hex",
  "log",
+ "mime_guess",
  "ntex",
  "ntex-cors",
  "ntex-files",

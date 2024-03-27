@@ -18,8 +18,9 @@ use ntex::web::HttpResponse;
 use quick_xml::se::to_string;
 use serde::Deserialize;
 use std::fs::read_dir;
-use std::path::PathBuf;
-use std::time::SystemTime;
+use std::path::{Path, PathBuf};
+use chrono::Utc;
+use mime_guess::MimeGuess;
 
 static DATA_DIR: &str = "data";
 static BASIC_PATH_SUFFIX: &str = "buckets";
@@ -166,7 +167,8 @@ pub(crate) async fn get_bucket(
                     let meta_file_path = bucket_path.clone();
                     let meta_file_path = meta_file_path.join(&file.file_name());
                     let meta_file_path = meta_file_path.to_str().unwrap();
-                    let metadata = fs::load_metadata(&meta_file_path).context("获取元数据失败")?;
+                    println!("{}", &meta_file_path);
+                    let metadata = fs::load_metadata(&meta_file_path)?;
                     contents.push(Content {
                         size: metadata.size as i64,
                         key: metadata.name,
@@ -282,6 +284,7 @@ pub(crate) async fn head_object(req: web::HttpRequest) -> HandlerResponse {
         .join(bucket_name)
         .join(object_name);
 
+    println!("filepath: {}", &file_path.as_path().to_string_lossy().to_string());
     do_head_object(file_path).await
 }
 
@@ -356,7 +359,7 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
         .to_string_lossy()
         .to_string();
     let tmp_filename = file_name.clone();
-    let file_type = get_file_type(&tmp_filename).unwrap_or("");
+    let file_type = MimeGuess::from_path(Path::new(&tmp_filename)).first_or_text_plain().to_string();
     let file_size = match body.size_hint() {
         (_, Some(sz)) => sz,
         (sz, None) => sz,
@@ -380,7 +383,7 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
         name: file_name,
         size: file_size,
         file_type: file_type.to_string(),
-        time: SystemTime::now(),
+        time:  Utc::now(),
         chunks: hashcodes,
     };
     fs::save_metadata(&metainfo_file_path, &metainfo)?;
@@ -435,7 +438,7 @@ async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
             "Content-Disposition",
             format!("attachment; filename=\"{}\"", metainfo.name),
         )
-        .header("Last-Modified", date_format_to_second(metainfo.time))
+        .header("Last-Modified", metainfo.time.format("%Y-%m-%d %H:%M:%S").to_string())
         .finish())
 }
 
