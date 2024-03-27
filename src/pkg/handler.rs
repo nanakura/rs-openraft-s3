@@ -10,10 +10,11 @@ use serde_xml_rs::to_string;
 use crate::pkg::err::AppError::BadRequest;
 use futures::{future::ok, stream::once, StreamExt, TryStreamExt};
 use ntex::util::{Bytes, BytesMut};
+use ntex_files::NamedFile;
 use ntex_multipart::Multipart;
 use tokio::io::{BufReader, BufStream};
 use zstd::decode_all;
-use crate::pkg::fs::multi_decompressed_reader;
+use crate::pkg::fs::{multi_decompressed_reader, ReadStream};
 
 #[derive(Serialize)]
 struct Person {
@@ -58,23 +59,16 @@ async fn upload_file(mut payload: Multipart) -> HandlerResponse {
     Ok(web::HttpResponse::Ok().finish())
 }
 
-#[web::get("/download/{filename}")]
+#[web::get("/download/{filename}*")]
 async fn download_file(req: web::HttpRequest) -> HandlerResponse {
     let filename: String = req.match_info().query("filename")
         .parse()
         .map_err(|_|BadRequest)?;
-    let temp_file_path = "./path/to/temp_file";
-    let mut temp_file = File::create(temp_file_path).context("创建临时文件失败")?;
     let readers = multi_decompressed_reader(&[String::from("")]).await?;
-    for reader in readers {
-        let decompressed_data = decode_all(reader).context("解压失败")?;
-        temp_file.write_all(&decompressed_data).context("写入临时文件失败")?;
-    }
-    let temp_file = File::open(temp_file_path).context("")?;
     let content_disposition = format!("attachment; filename=\"{}\"", filename);
-
+    let body = ReadStream::new(readers);
     Ok(web::HttpResponse::Ok()
         .header("Content-Type", "application/octet-stream")
         .header("Content-Disposition", content_disposition)
-        .streaming(temp_file))
+        .streaming(body))
 }

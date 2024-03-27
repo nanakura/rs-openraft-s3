@@ -2,9 +2,11 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+use futures::Stream;
 use sha2::{Sha256, Digest};
 use serde::{Deserialize, Serialize};
 use hex::ToHex;
+use ntex::util::Bytes;
 use zstd::stream::read::Decoder;
 use zstd::stream::write::Encoder;
 
@@ -89,13 +91,54 @@ fn load_metadata(meta_file_path: &str) -> anyhow::Result<Metadata> {
     Ok(metadata)
 }
 
-pub(crate) async fn multi_decompressed_reader(file_paths: &[String]) -> anyhow::Result<Vec<Box<dyn io::Read + Send>>> {
+pub(crate) struct ReadStream {
+    readers: Vec<Box<dyn Read + Send + Unpin>>,
+}
+
+impl ReadStream {
+    pub(crate) fn new(readers: Vec<Box<dyn Read + Send + Unpin>>) -> Self {
+        ReadStream { readers }
+    }
+}
+
+impl Stream for ReadStream {
+    type Item = io::Result<Bytes>;
+
+    fn poll_next(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Self::Item>> {
+        let mut buffer = vec![0; 1024];
+
+        let mut total_bytes_read = 0;
+        for reader in &mut self.readers {
+            match reader.read(&mut buffer).map(|bytes_read| {
+                total_bytes_read += bytes_read;
+                bytes_read
+            }) {
+                Ok(bytes_read) => {
+                    if bytes_read == 0 {
+                        break;
+                    }
+                }
+                Err(error) => return std::task::Poll::Ready(Some(Err(error))),
+            }
+        }
+
+        if total_bytes_read > 0 {
+            buffer.resize(total_bytes_read, 0);
+            std::task::Poll::Ready(Some(Ok(Bytes::from(buffer))))
+        } else {
+            std::task::Poll::Ready(None)
+        }
+    }
+}
+
+
+pub(crate) async fn multi_decompressed_reader(file_paths: &[String]) -> anyhow::Result<Vec<Box<dyn io::Read + Send + Unpin>>> {
     let mut readers = Vec::new();
     for file_path in file_paths {
         let file = fs::File::open(file_path)?;
         let decoder = Decoder::new(file)?;
 
-        readers.push(Box::new(decoder) as Box<dyn io::Read + Send>);
+        readers.push(Box::new(decoder) as Box<dyn io::Read + Send + Unpin>);
     }
 
     Ok(readers)
