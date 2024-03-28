@@ -15,7 +15,7 @@ use anyhow::{anyhow, Context};
 use chrono::Utc;
 use futures::StreamExt;
 use mime_guess::MimeGuess;
-use ntex::util::{BytesMut, Stream};
+use ntex::util::{Bytes, BytesMut, Stream};
 use ntex::web;
 use ntex::web::types::Query;
 use ntex::web::HttpResponse;
@@ -25,6 +25,8 @@ use std::fs::read_dir;
 use std::io;
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
+use futures::future::ok;
+use futures::stream::once;
 use uuid::Uuid;
 use zstd::zstd_safe::WriteBuf;
 
@@ -598,6 +600,8 @@ async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
             .body(xml));
     }
     let metainfo = fs::load_metadata(&metainfo_file_path)?;
+
+    let body = once(ok::<_, web::Error>(Bytes::from_static(b"")));
     Ok(web::HttpResponse::Ok()
         .content_type(metainfo.file_type)
         .header(
@@ -609,7 +613,8 @@ async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
             metainfo.time.format("%Y-%m-%d %H:%M:%S").to_string(),
         )
         .content_length(metainfo.size as u64)
-        .body("body"))
+        .no_chunking()
+        .streaming(body))
 }
 
 pub(crate) async fn upload_file_or_upload_chunk_longpath(
