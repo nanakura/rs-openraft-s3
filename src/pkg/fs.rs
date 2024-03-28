@@ -140,7 +140,7 @@ pub(crate) async fn multi_decompressed_reader(
 ) -> anyhow::Result<Vec<Box<dyn io::Read + Send + Unpin>>> {
     let mut readers = Vec::new();
     for file_path in file_paths {
-        let file = fs::File::open(file_path)?;
+        let file = fs::File::open(path_from_hash(file_path))?;
         let decoder = Decoder::new(file)?;
 
         readers.push(Box::new(decoder) as Box<dyn io::Read + Send + Unpin>);

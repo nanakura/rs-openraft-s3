@@ -1,3 +1,4 @@
+use std::fmt::Pointer;
 use crate::pkg::err::AppError;
 use crate::pkg::err::AppError::BadRequest;
 use crate::pkg::fs;
@@ -374,9 +375,13 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
     }
     let chunks = bytes.chunks(8 << 20);
     let mut hashcodes: Vec<String> = Vec::new();
+    let mut sz_flag = false;
     for chunk in chunks {
         let sha = sum_15bit_sha256(chunk);
-        if file_size == 0 {
+        if file_size == 0 || sz_flag {
+            if !sz_flag {
+            sz_flag = true;
+            }
             file_size += chunk.len();
         }
         hashcodes.push(sha.clone());
@@ -435,7 +440,6 @@ async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
             .body(xml));
     }
     let metainfo = fs::load_metadata(&metainfo_file_path)?;
-
     Ok(web::HttpResponse::Ok()
         .content_type(metainfo.file_type)
         .header(
@@ -447,7 +451,7 @@ async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
             metainfo.time.format("%Y-%m-%d %H:%M:%S").to_string(),
         )
         .content_length(metainfo.size as u64)
-        .finish())
+        .body("body"))
 }
 
 pub(crate) async fn upload_file_or_upload_chunk_longpath(
