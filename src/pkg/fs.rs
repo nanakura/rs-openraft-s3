@@ -1,14 +1,13 @@
-use crate::pkg::util::date::{deserialize_date, serialize_date};
 use anyhow::{anyhow, Context};
 use chrono::{DateTime, Utc};
-use futures::stream::{self, StreamExt};
 use futures::Stream;
 use hex::ToHex;
 use ntex::util::Bytes;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::{self, Read, Write};
+use std::fs::File;
+use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use zstd::stream::read::Decoder;
 use zstd::stream::write::Encoder;
@@ -71,6 +70,7 @@ pub(crate) fn compress_chunk(chunk: &[u8]) -> anyhow::Result<Vec<u8>> {
     Ok(result)
 }
 
+#[allow(dead_code)]
 fn decompress_chunk(chunk_path: &str) -> anyhow::Result<Vec<u8>> {
     let chunk_file = fs::read(chunk_path)?;
     let mut decoder = Decoder::new(chunk_file.as_slice())?;
@@ -107,7 +107,7 @@ impl Stream for ReadStream {
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         let mut buffer = vec![0; 1024];
 
@@ -154,8 +154,9 @@ pub(crate) fn is_path_exist(hash: &str) -> bool {
     path.exists()
 }
 
-fn split_file(
-    mut reader: Box<dyn io::Read + Send>,
+#[allow(dead_code)]
+pub(crate) fn split_file(
+    mut reader: BufReader<File>,
     chunk_size: usize,
 ) -> anyhow::Result<Vec<String>> {
     let mut chunks = Vec::new();
@@ -183,7 +184,7 @@ fn split_file(
 
 #[cfg(test)]
 mod test {
-    use super::*;
+
     #[test]
     fn test1() {}
 }

@@ -9,17 +9,20 @@ pub fn date_format_to_second(date: SystemTime) -> String {
     tag
 }
 
+#[allow(dead_code)]
 pub fn date_tag_to_second() -> String {
     let df = "%Y%m%d%H%M%S";
     let tag = Utc::now().format(df).to_string();
     tag
 }
 
+#[allow(dead_code)]
 pub fn utc_date_format() -> String {
     let df = "%Y-%m-%dT%H:%M:%S.000Z";
     let tag = Utc::now().format(df).to_string();
     tag
 }
+#[allow(dead_code)]
 pub fn serialize_date<S>(date: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -27,6 +30,7 @@ where
     let formatted_date = date.format("%Y-%m-%d %H:%M:%S").to_string();
     serializer.serialize_str(&formatted_date)
 }
+#[allow(dead_code)]
 pub fn deserialize_date<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
 where
     D: serde::Deserializer<'de>,

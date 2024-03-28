@@ -27,6 +27,8 @@ ntex-files = "1.0.0"
 chrono = { version = "0.4.35", features = ["serde"] }
 quick-xml = { version = "0.31.0", features = ["serialize"] }
 mime_guess = "2.0.4"
+uuid = { version = "1.8.0", features = ["v4"] }
+crypto-hash = "0.3.4"
 
 [profile.dev]
 debug = 0
