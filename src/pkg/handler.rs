@@ -28,6 +28,7 @@ use std::io::{BufReader};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use zstd::zstd_safe::WriteBuf;
+use rayon::prelude::*;
 
 static DATA_DIR: &str = "data";
 static BASIC_PATH_SUFFIX: &str = "buckets";
@@ -391,7 +392,7 @@ async fn combine_chunk(
         return Err(Anyhow(anyhow!("未初始化".to_string())));
     }
 
-    for part_etag in part_etags.iter().clone() {
+    for part_etag in &part_etags {
         if !fs::is_path_exist(&part_etag.etag) {
             check = false;
             break;
@@ -411,7 +412,7 @@ async fn combine_chunk(
         return Err(Anyhow(anyhow!("分片不完整".to_string())));
     }
     part_etags.sort_by_key(|p| p.part_number);
-    let chunks: Vec<String> = part_etags.iter().map(|p| p.etag.clone()).collect();
+    let chunks: Vec<String> = part_etags.par_iter().map(|p| p.etag.clone()).collect();
     let mut metadata = fs::load_metadata(&tmp_metadata_dir.to_string_lossy().to_string())?;
     metadata.size = total_len;
     metadata.chunks = chunks;
