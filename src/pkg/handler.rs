@@ -2,7 +2,7 @@ use crate::pkg::err::AppError;
 use crate::pkg::err::AppError::{Anyhow, BadRequest};
 use crate::pkg::fs;
 use crate::pkg::fs::{
-    multi_decompressed_reader, save_file, save_metadata, sum_15bit_sha256, Metadata, ReadStream,
+    multi_decompressed_reader, save_file, save_metadata, sum_15bit_sha256, Metadata, UncompressStream,
 };
 use crate::pkg::model::{
     Bucket, BucketWrapper, CompleteMultipartUpload, CompleteMultipartUploadResult, Content,
@@ -523,8 +523,8 @@ pub(crate) async fn upload_chunk(
         .join(part_number);
     std::fs::write(part_path, &format!("{}", len)).context("保存文件大小失败")?;
     let hash = fs::sum_15bit_sha256(&bytes[..]);
-
-    fs::save_file(&hash, &bytes[..])?;
+    let body = fs::compress_chunk(&bytes[..])?;
+    fs::save_file(&hash, &body[..])?;
     // let part_etag = PartETag {
     //     part_number: part_number.to_string().parse().context("parse partNumber failed")?,
     //     etag:hash,
@@ -718,9 +718,9 @@ async fn do_download_file(file_path: PathBuf) -> HandlerResponse {
     let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
     metainfo_file_path.push_str(".meta");
     let meta_info = fs::load_metadata(&metainfo_file_path)?;
-    let readers = multi_decompressed_reader(&meta_info.chunks[..]).await?;
+    // let readers = multi_decompressed_reader(&meta_info.chunks[..]).await?;
+    let body = UncompressStream::new(meta_info.chunks);
     let content_disposition = format!("attachment; filename=\"{}\"", meta_info.name);
-    let body = ReadStream::new(readers);
     Ok(web::HttpResponse::Ok()
         .header("Content-Type", "application/octet-stream")
         .header("Content-Length", meta_info.size)

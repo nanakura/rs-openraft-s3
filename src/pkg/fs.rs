@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context};
 use chrono::{DateTime, Utc};
-use futures::Stream;
+use futures::{SinkExt, Stream};
 use hex::ToHex;
 use ntex::util::Bytes;
 use serde::{Deserialize, Serialize};
@@ -9,6 +9,9 @@ use std::fs;
 use std::fs::File;
 use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
+use std::slice::Iter;
+use std::sync::Arc;
+use futures::stream::FuturesUnordered;
 use zstd::stream::read::Decoder;
 use zstd::stream::write::Encoder;
 
@@ -92,46 +95,41 @@ pub(crate) fn load_metadata(meta_file_path: &str) -> anyhow::Result<Metadata> {
     Ok(metadata)
 }
 
-pub(crate) struct ReadStream {
-    readers: Vec<Box<dyn Read + Send + Unpin>>,
+pub(crate) struct UncompressStream {
+    hashes: Vec<String>,
+    idx: usize
 }
 
-impl ReadStream {
-    pub(crate) fn new(readers: Vec<Box<dyn Read + Send + Unpin>>) -> Self {
-        ReadStream { readers }
+impl UncompressStream {
+    pub(crate) fn new(hashes: Vec<String>) -> Self {
+        UncompressStream { hashes, idx: 0 }
     }
 }
 
-impl Stream for ReadStream {
+impl Stream for UncompressStream {
     type Item = io::Result<Bytes>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
         _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
-        let mut buffer = vec![0; 1024];
-
-        let mut total_bytes_read = 0;
-        for reader in &mut self.readers {
-            match reader.read(&mut buffer).map(|bytes_read| {
-                total_bytes_read += bytes_read;
-                bytes_read
-            }) {
-                Ok(bytes_read) => {
-                    if bytes_read == 0 {
-                        break;
-                    }
-                }
-                Err(error) => return std::task::Poll::Ready(Some(Err(error))),
+        if self.idx > self.hashes.len() {
+            std::task::Poll::Ready(None)
+        } else {
+            let x = &self.hashes[self.idx];
+            let path = path_from_hash(x).to_string_lossy().to_string();
+            if let Ok(res) = decompress_chunk(&path) {
+                self.idx+=1;
+                std::task::Poll::Ready(Some(Ok(Bytes::from(res))))
+            } else {
+                std::task::Poll::Ready(None)
             }
         }
-
-        if total_bytes_read > 0 {
-            buffer.resize(total_bytes_read, 0);
-            std::task::Poll::Ready(Some(Ok(Bytes::from(buffer))))
-        } else {
-            std::task::Poll::Ready(None)
-        }
+        // if let Some(it) = self.hashes.next() {
+        //     let res = decompress_chunk(&it).unwrap();
+        //     std::task::Poll::Ready(Some(Ok(Bytes::from(res))))
+        // } else {
+        // }
     }
 }
 
@@ -145,7 +143,7 @@ pub(crate) async fn multi_decompressed_reader(
 
         readers.push(Box::new(decoder) as Box<dyn io::Read + Send + Unpin>);
     }
-
+    //let x = readers.into_iter();
     Ok(readers)
 }
 
