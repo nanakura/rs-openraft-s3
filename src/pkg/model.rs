@@ -11,7 +11,7 @@ pub struct Bucket {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CompleteMultipartUpload {
-    #[serde(rename = "PartETags")]
+    #[serde(rename = "Part")]
     pub part_etags: Vec<PartETag>,
 }
 

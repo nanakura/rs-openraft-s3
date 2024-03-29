@@ -9,7 +9,8 @@ pub fn get_file_type(file_path: &str) -> Option<&str> {
 
 #[allow(dead_code)]
 pub fn file_type_from_meta_info(file_path: &str) -> anyhow::Result<String> {
-    let metainfo_path = PathBuf::from(file_path).with_extension(".meta");
-    let metadata = fs::load_metadata(&metainfo_path.to_string_lossy().to_string())?;
+    let mut metainfo_path = file_path.to_string();
+   metainfo_path.push_str(".meta");
+    let metadata = fs::load_metadata(&metainfo_path)?;
     Ok(metadata.file_type)
 }

@@ -155,6 +155,12 @@ mod test {
         let xml = to_string(&person);
         assert!(xml.is_ok(), "序列化失败");
     }
+
+    #[test]
+    fn testxml() {
+        let body = "<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>C1C8D367401A60A</ETag></Part><Part><PartNumber>2</PartNumber><ETag>377E69835DB8D96</ETag></Part><Part><PartNumber>3</PartNumber><ETag>165C6E95B9261D0</ETag></Part><Part><PartNumber>4</PartNumber><ETag>50AF062DCDF83CE</ETag></Part><Part><PartNumber>5</PartNumber><ETag>F58FC82E47A70F5</ETag></Part></CompleteMultipartUpload>";
+        let res: CompleteMultipartUpload = quick_xml::de::from_str(body).unwrap();
+    }
 }
 
 #[derive(Deserialize)]
@@ -262,10 +268,8 @@ pub(crate) async fn init_chunk_or_combine_chunk(
             let item = item.context("")?;
             bytes.extend_from_slice(&item);
         }
-        //let cmu: CompleteMultipartUpload = quick_xml::de::from_str(std::str::from_utf8(bytes.as_slice()).map_err(|err|anyhow!(err))?).map_err(|err| anyhow!(err))?;
-        let cmu: CompleteMultipartUpload =
-            quick_xml::de::from_reader(BufReader::new(io::Cursor::new(bytes.as_slice())))
-                .map_err(|err| anyhow!(err))?;
+        let body = std::str::from_utf8(bytes.as_slice()).map_err(|err|anyhow!(err))?;
+        let cmu: CompleteMultipartUpload = quick_xml::de::from_str(body).map_err(|err| anyhow!(err))?;
         combine_chunk(&bucket_name, &object_name, &upload_id, cmu).await
     } else {
         init_chunk(bucket_name, object_name).await
@@ -289,10 +293,7 @@ pub(crate) async fn init_chunk_or_combine_chunk_longpath(
             .join(&object_suffix)
             .to_string_lossy()
             .to_string();
-        //let cmu: CompleteMultipartUpload = quick_xml::de::from_str(std::str::from_utf8(bytes.as_slice()).map_err(|err|anyhow!(err))?).map_err(|err| anyhow!(err))?;
-        let cmu: CompleteMultipartUpload =
-            quick_xml::de::from_reader(BufReader::new(io::Cursor::new(bytes.as_slice())))
-                .map_err(|err| anyhow!(err))?;
+        let cmu: CompleteMultipartUpload = quick_xml::de::from_str(std::str::from_utf8(bytes.as_slice()).map_err(|err|anyhow!(err))?).map_err(|err| anyhow!(err))?;
         combine_chunk(&bucket_name, &object_key, &upload_id, cmu).await
     } else {
         init_chunk(
@@ -306,19 +307,18 @@ pub(crate) async fn init_chunk_or_combine_chunk_longpath(
     }
 }
 
-#[allow(dead_code)]
 async fn init_chunk(bucket: String, object_key: String) -> HandlerResponse {
     let guid = Uuid::new_v4();
     let upload_id = guid.to_string();
     let file_size_dir = PathBuf::from(DATA_DIR).join("tmp").join(&upload_id);
     let extension = &format!(".meta.{}", &upload_id);
-    let tmp_dir = PathBuf::from(DATA_DIR)
+    let mut tmp_dir = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(&bucket)
         .join(&object_key)
-        .with_extension(extension)
         .to_string_lossy()
         .to_string();
+    tmp_dir.push_str(extension);
     std::fs::create_dir_all(file_size_dir).map_err(|err| anyhow!(err))?;
     let file_name = Path::new(&object_key)
         .file_name()
@@ -345,25 +345,27 @@ async fn init_chunk(bucket: String, object_key: String) -> HandlerResponse {
     Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
 }
 
-#[allow(dead_code)]
 async fn combine_chunk(
     bucket_name: &str,
     object_key: &str,
     upload_id: &str,
     cmu: CompleteMultipartUpload,
 ) -> HandlerResponse {
+    println!("合并分片，uploadId: {}", upload_id);
     let mut part_etags = cmu.part_etags;
 
     let mut check = true;
     let mut total_len: usize = 0;
 
     let extension = &format!(".meta.{}", &upload_id);
-    let tmp_metadata_dir = PathBuf::from(DATA_DIR)
+    let mut tmp_metadata_dir = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
-        .join(object_key)
-        .with_extension(extension);
+        .join(object_key).to_string_lossy().to_string();
+    tmp_metadata_dir.push_str(extension);
+    let tmp_metadata_dir = PathBuf::from(tmp_metadata_dir);
     if !tmp_metadata_dir.as_path().exists() {
+        println!("未初始化");
         return Err(Anyhow(anyhow!("未初始化".to_string())));
     }
 
@@ -375,7 +377,7 @@ async fn combine_chunk(
         let len_path = PathBuf::from(DATA_DIR)
             .join("tmp")
             .join(upload_id)
-            .with_extension(&format!("{}", part_etag.part_number));
+            .join(&format!("{}", part_etag.part_number));
         let len: usize = std::fs::read_to_string(len_path)
             .context("读取长度文件失败")?
             .parse()
@@ -384,24 +386,28 @@ async fn combine_chunk(
     }
 
     if !check {
+        println!("分片不完整");
         return Err(Anyhow(anyhow!("分片不完整".to_string())));
     }
     part_etags.sort_by_key(|p| p.part_number);
     let chunks: Vec<String> = part_etags.par_iter().map(|p| p.etag.clone()).collect();
     let mut metadata = fs::load_metadata(&tmp_metadata_dir.to_string_lossy().to_string())?;
+    println!("读取临时元数据成功");
     metadata.size = total_len;
     metadata.chunks = chunks;
     metadata.time = Utc::now();
 
-    let metadata_dir = PathBuf::from(DATA_DIR)
+    let mut metadata_dir = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
         .join(object_key)
         .to_string_lossy()
         .to_string();
+    metadata_dir.push_str(".meta");
     save_metadata(&metadata_dir, &metadata)?;
-    std::fs::remove_file(tmp_metadata_dir).context("")?;
-    std::fs::remove_dir_all(PathBuf::from(DATA_DIR).join("tmp").join(upload_id)).context("")?;
+    println!("保存新元数据成功");
+    std::fs::remove_file(tmp_metadata_dir).context("删除临时元数据失败")?;
+    std::fs::remove_dir_all(PathBuf::from(DATA_DIR).join("tmp").join(upload_id)).context("删除临时文件夹失败")?;
 
     let e_tag = cry::encrypt_by_md5(&format!("{}/{}", bucket_name, object_key));
     let res = CompleteMultipartUploadResult {
@@ -614,6 +620,7 @@ pub(crate) async fn head_object_longpath(req: web::HttpRequest) -> HandlerRespon
 async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
     let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
     metainfo_file_path.push_str(".meta");
+    println!("{}", metainfo_file_path);
     if !std::fs::metadata(&metainfo_file_path).is_ok() {
         let resp = HeadNotFoundResp {
             no_exist: "1".to_string(),
