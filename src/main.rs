@@ -21,42 +21,42 @@ async fn main() -> anyhow::Result<()> {
         let app = web::App::new()
             .wrap(cors)
             .wrap(middleware::Logger::default())
-                    .route("/", web::get().to(list_bucket))
-                    .route("/{bucket}/", web::get().to(get_bucket))
-                    .route("/{bucket}/", web::head().to(head_bucket))
-                    .route("/{bucket}/", web::put().to(create_bucket))
-                    .route("/{bucket}/", web::delete().to(delete_bucket))
-                    .route(
-                        "/{bucket}/{object}",
-                        web::post().to(init_chunk_or_combine_chunk),
-                    )
-                    .route("/{bucket}/{object}", web::head().to(head_object))
-                    .route(
-                        "/{bucket}/{object}",
-                        web::put().to(upload_file_or_upload_chunk),
-                    )
-                    .route("/{bucket}/{object}", web::delete().to(delete_file))
-                    .route("/{bucket}/{object}", web::get().to(download_file))
-                    .route(
-                        "/{bucket}/{object}/{objectSuffix}*",
-                        web::post().to(init_chunk_or_combine_chunk_longpath),
-                    )
-                    .route(
-                        "/{bucket}/{object}/{objectSuffix}*",
-                        web::head().to(head_object_longpath),
-                    )
-                    .route(
-                        "/{bucket}/{object}/{objectSuffix}*",
-                        web::put().to(upload_file_or_upload_chunk_longpath),
-                    )
-                    .route(
-                        "/{bucket}/{object}/{objectSuffix}*",
-                        web::delete().to(delete_file_longpath),
-                    )
-                    .route(
-                        "/{bucket}/{object}/{objectSuffix}*",
-                        web::get().to(download_file_longpath),
-                    );
+            .route("/", web::get().to(list_bucket))
+            .route("/{bucket}/", web::get().to(get_bucket))
+            .route("/{bucket}/", web::head().to(head_bucket))
+            .route("/{bucket}/", web::put().to(create_bucket))
+            .route("/{bucket}/", web::delete().to(delete_bucket))
+            .route(
+                "/{bucket}/{object}",
+                web::post().to(init_chunk_or_combine_chunk),
+            )
+            .route("/{bucket}/{object}", web::head().to(head_object))
+            .route(
+                "/{bucket}/{object}",
+                web::put().to(upload_file_or_upload_chunk),
+            )
+            .route("/{bucket}/{object}", web::delete().to(delete_file))
+            .route("/{bucket}/{object}", web::get().to(download_file))
+            .route(
+                "/{bucket}/{object}/{objectSuffix}*",
+                web::post().to(init_chunk_or_combine_chunk_longpath),
+            )
+            .route(
+                "/{bucket}/{object}/{objectSuffix}*",
+                web::head().to(head_object_longpath),
+            )
+            .route(
+                "/{bucket}/{object}/{objectSuffix}*",
+                web::put().to(upload_file_or_upload_chunk_longpath),
+            )
+            .route(
+                "/{bucket}/{object}/{objectSuffix}*",
+                web::delete().to(delete_file_longpath),
+            )
+            .route(
+                "/{bucket}/{object}/{objectSuffix}*",
+                web::get().to(download_file_longpath),
+            );
 
         app
     })

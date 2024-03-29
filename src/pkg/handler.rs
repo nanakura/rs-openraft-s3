@@ -1,8 +1,8 @@
 use crate::pkg::err::AppError;
-use crate::pkg::err::AppError::BadRequest;
+use crate::pkg::err::AppError::{Anyhow, BadRequest};
 use crate::pkg::fs;
 use crate::pkg::fs::{
-    multi_decompressed_reader, save_file, sum_15bit_sha256, Metadata, ReadStream,
+    multi_decompressed_reader, save_file, save_metadata, sum_15bit_sha256, Metadata, ReadStream,
 };
 use crate::pkg::model::{
     Bucket, BucketWrapper, CompleteMultipartUpload, CompleteMultipartUploadResult, Content,
@@ -10,9 +10,10 @@ use crate::pkg::model::{
 };
 use crate::pkg::util::cry;
 use crate::pkg::util::date::date_format_to_second;
-use crate::pkg::util::file::file_type_from_meta_info;
 use anyhow::{anyhow, Context};
-use chrono::Utc;
+use chrono::{Utc};
+use futures::future::ok;
+use futures::stream::once;
 use futures::StreamExt;
 use mime_guess::MimeGuess;
 use ntex::util::{Bytes, BytesMut, Stream};
@@ -23,11 +24,8 @@ use quick_xml::se::to_string;
 use serde::Deserialize;
 use std::fs::read_dir;
 use std::io;
-use std::io::{BufReader, Read, Write};
+use std::io::{BufReader};
 use std::path::{Path, PathBuf};
-use futures::future::ok;
-use futures::stream::once;
-use ntex::http::body::MessageBody;
 use uuid::Uuid;
 use zstd::zstd_safe::WriteBuf;
 
@@ -252,6 +250,7 @@ pub(crate) async fn delete_bucket(req: web::HttpRequest) -> HandlerResponse {
 
 #[derive(Deserialize)]
 pub struct InitChunkOrCombineQuery {
+    #[serde(rename = "uploadId")]
     pub upload_id: Option<String>,
 }
 pub(crate) async fn init_chunk_or_combine_chunk(
@@ -335,8 +334,32 @@ pub(crate) async fn init_chunk_or_combine_chunk_longpath(
 async fn init_chunk(bucket: String, object_key: String) -> HandlerResponse {
     let guid = Uuid::new_v4();
     let upload_id = guid.to_string();
-    let tmp_dir = PathBuf::from(DATA_DIR).join("tmp").join(&upload_id);
-    std::fs::create_dir_all(tmp_dir).map_err(|err| anyhow!(err))?;
+    let file_size_dir = PathBuf::from(DATA_DIR).join("tmp").join(&upload_id);
+    let extension = &format!(".meta.{}", &upload_id);
+    let tmp_dir = PathBuf::from(DATA_DIR)
+        .join(BASIC_PATH_SUFFIX)
+        .join(&bucket)
+        .join(&object_key)
+        .with_extension(extension)
+        .to_string_lossy()
+        .to_string();
+    std::fs::create_dir_all(file_size_dir).map_err(|err| anyhow!(err))?;
+    let file_name = Path::new(&object_key)
+        .file_name()
+        .context("解析文件名失败")?
+        .to_string_lossy()
+        .to_string();
+    let file_type = MimeGuess::from_path(Path::new(&file_name))
+        .first_or_text_plain()
+        .to_string();
+    let meta_info = Metadata {
+        name: file_name,
+        size: 0,
+        file_type,
+        time: Default::default(),
+        chunks: vec![],
+    };
+    save_metadata(&tmp_dir, &meta_info)?;
     let resp = InitiateMultipartUploadResult {
         bucket,
         object_key,
@@ -353,74 +376,55 @@ async fn combine_chunk(
     upload_id: &str,
     cmu: CompleteMultipartUpload,
 ) -> HandlerResponse {
-    let merge_file_path = PathBuf::from(DATA_DIR)
-        .join(BASIC_PATH_SUFFIX)
-        .join(bucket_name)
-        .join(object_key);
-    let file_name = merge_file_path.file_name().unwrap().to_str().unwrap();
     let mut part_etags = cmu.part_etags;
 
-    if !merge_file_path.exists() {
-        let mut merge_file = std::fs::File::create(&merge_file_path).map_err(|err| anyhow!(err))?;
-        let mut check = true;
-        let tmp_dir = PathBuf::from(DATA_DIR).join("tmp");
+    let mut check = true;
+    let mut total_len: usize = 0;
 
-        for part_etag in part_etags.iter().clone() {
-            let tmp_part_file_path = tmp_dir
-                .join(upload_id)
-                .join(format!("{}.temp", part_etag.part_number));
-            let etag = std::fs::read_to_string(&tmp_part_file_path).context("读取文件失败")?;
-
-            if part_etag.etag != etag {
-                check = false;
-                break;
-            }
-        }
-
-        if check {
-            part_etags.sort_by_key(|p| p.part_number);
-
-            for part_etag in part_etags {
-                let decrypted_file_path = &part_etag.etag;
-                let mut file = std::fs::File::open(&decrypted_file_path).context("读取文件失败")?;
-                let mut reader = BufReader::new(&mut file);
-                let mut buf = [0u8; 5 * 1024 * 1024];
-
-                loop {
-                    let n = reader.read(&mut buf[..]).context("读取文件失败")?;
-                    if n == 0 {
-                        break;
-                    }
-                    merge_file.write_all(&buf[..n]).context("读取文件失败")?;
-                }
-            }
-
-            let origin_content =
-                std::fs::File::open(&merge_file_path).map_err(|err| anyhow!(err))?;
-            let chunks = fs::split_file(BufReader::new(origin_content), 8 * 1024 * 1024)?;
-            let origin_content =
-                std::fs::File::open(&merge_file_path).map_err(|err| anyhow!(err))?;
-            let file_stat = origin_content.metadata().map_err(|err| anyhow!(err))?;
-            let file_type =
-                file_type_from_meta_info(&merge_file_path.to_string_lossy().to_string())?;
-
-            let metadata = Metadata {
-                name: file_name.to_owned(),
-                size: file_stat.len() as usize,
-                file_type,
-                time: file_stat.modified().map_err(|err| anyhow!(err))?.into(),
-                chunks,
-            };
-
-            let meta_file_path = merge_file_path
-                .with_extension("meta")
-                .to_string_lossy()
-                .to_string();
-            fs::save_metadata(&meta_file_path, &metadata)?;
-
-            std::fs::remove_file(&merge_file_path).map_err(|err| anyhow!(err))?;
-        }
+    let extension = &format!(".meta.{}", &upload_id);
+    let tmp_metadata_dir = PathBuf::from(DATA_DIR)
+        .join(BASIC_PATH_SUFFIX)
+        .join(bucket_name)
+        .join(object_key)
+        .with_extension(extension);
+    if !tmp_metadata_dir.as_path().exists() {
+        return Err(Anyhow(anyhow!("未初始化".to_string())));
     }
+
+    for part_etag in part_etags.iter().clone() {
+        if !fs::is_path_exist(&part_etag.etag) {
+            check = false;
+            break;
+        }
+        let len_path = PathBuf::from(DATA_DIR)
+            .join("tmp")
+            .join(upload_id)
+            .with_extension(&format!("{}", part_etag.part_number));
+        let len: usize = std::fs::read_to_string(len_path)
+            .context("读取长度文件失败")?
+            .parse()
+            .context("解析长度文件失败")?;
+        total_len += len;
+    }
+
+    if !check {
+        return Err(Anyhow(anyhow!("分片不完整".to_string())));
+    }
+    part_etags.sort_by_key(|p| p.part_number);
+    let chunks: Vec<String> = part_etags.iter().map(|p| p.etag.clone()).collect();
+    let mut metadata = fs::load_metadata(&tmp_metadata_dir.to_string_lossy().to_string())?;
+    metadata.size = total_len;
+    metadata.chunks = chunks;
+    metadata.time = Utc::now();
+
+    let metadata_dir = PathBuf::from(DATA_DIR)
+        .join(bucket_name)
+        .join(object_key)
+        .to_string_lossy()
+        .to_string();
+    save_metadata(&metadata_dir, &metadata)?;
+    std::fs::remove_file(tmp_metadata_dir).context("")?;
+    std::fs::remove_dir_all(PathBuf::from(DATA_DIR).join("tmp").join(upload_id)).context("")?;
 
     let e_tag = cry::encrypt_by_md5(&format!("{}/{}", bucket_name, object_key));
     let res = CompleteMultipartUploadResult {
@@ -453,7 +457,9 @@ pub(crate) async fn head_object(req: web::HttpRequest) -> HandlerResponse {
 
 #[derive(Deserialize)]
 pub struct UploadFileOrChunkQuery {
+    #[serde(rename = "uploadId")]
     pub upload_id: Option<String>,
+    #[serde(rename = "partNumber")]
     pub part_number: Option<String>,
 }
 pub(crate) async fn upload_file_or_upload_chunk(
@@ -473,15 +479,90 @@ pub(crate) async fn upload_file_or_upload_chunk(
         .map_err(|_| BadRequest)?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
-        .join(bucket_name)
-        .join(object_name);
+        .join(&bucket_name)
+        .join(&object_name);
     match (query.upload_id, query.part_number) {
-        (Some(_upload_id), Some(_part_number)) => {
-            println!("short path");
-            Ok(HttpResponse::Ok().content_type("application/xml").finish())
+        (Some(upload_id), Some(part_number)) => {
+            upload_chunk(&bucket_name, &object_name, &part_number, &upload_id, body).await
         }
-        _ => upload_file(file_path, body).await,
+        _ => {
+            if let Some(copy_source) = req.headers().get("x-amz-copy-source") {
+                copy_object(
+                    copy_source.to_str().map_err(|_| BadRequest)?,
+                    &bucket_name,
+                    &object_name,
+                )
+                .await
+            } else {
+                upload_file(file_path, body).await
+            }
+        }
     }
+}
+
+async fn copy_object(copy_source: &str, dest_bucket: &str, dest_object: &str) -> HandlerResponse {
+    let mut copy_source = copy_source.to_string();
+    if copy_source.contains("?") {
+        copy_source = copy_source.split("?").next().unwrap().to_string();
+    }
+
+    let copy_list: Vec<&str> = copy_source.split("/").collect();
+    let copy_list = &copy_list[..copy_list.len() - 1];
+
+    let mut src_bucket_name = String::new();
+    for &it in copy_list {
+        if !it.is_empty() {
+            src_bucket_name = it.to_string();
+            break;
+        }
+    }
+
+    let mut res = String::new();
+    for i in 1..copy_list.len() {
+        res.push_str(copy_list[i]);
+        res.push('/');
+    }
+    let src_object = &res;
+    let src_metadata_path = PathBuf::from(DATA_DIR)
+        .join(BASIC_PATH_SUFFIX)
+        .join(src_bucket_name)
+        .join(src_object);
+    let dest_metadata_path = PathBuf::from(DATA_DIR)
+        .join(BASIC_PATH_SUFFIX)
+        .join(dest_bucket)
+        .join(dest_object);
+    std::fs::copy(src_metadata_path, dest_metadata_path).map_err(|err| anyhow!(err))?;
+
+    Ok(HttpResponse::Ok().finish())
+}
+
+pub(crate) async fn upload_chunk(
+    _bucket_name: &str,
+    _object_key: &str,
+    part_number: &str,
+    upload_id: &str,
+    mut body: web::types::Payload,
+) -> HandlerResponse {
+    let mut bytes = BytesMut::new();
+    while let Some(item) = body.next().await {
+        let item = item.map_err(|err| anyhow!(err.to_string()))?;
+        bytes.extend_from_slice(&item);
+    }
+    let len = bytes.len();
+    let bytes = bytes.to_vec();
+    let part_path = PathBuf::from(DATA_DIR)
+        .join("tmp")
+        .join(upload_id)
+        .join(part_number);
+    std::fs::write(part_path, &format!("{}", len)).context("保存文件大小失败")?;
+    let hash = fs::sum_15bit_sha256(&bytes[..]);
+
+    fs::save_file(&hash, &bytes[..])?;
+    // let part_etag = PartETag {
+    //     part_number: part_number.to_string().parse().context("parse partNumber failed")?,
+    //     etag:hash,
+    // };
+    Ok(HttpResponse::Ok().header("ETag", hash).finish())
 }
 
 pub(crate) async fn delete_file(req: web::HttpRequest) -> HandlerResponse {
@@ -531,7 +612,7 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
     };
     let mut bytes = BytesMut::new();
     while let Some(item) = body.next().await {
-        let item = item.map_err(|err|anyhow!(err.to_string()))?;
+        let item = item.map_err(|err| anyhow!(err.to_string()))?;
         bytes.extend_from_slice(&item);
     }
     let chunks = bytes.chunks(8 << 20);
@@ -611,10 +692,7 @@ async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
             "Content-Disposition",
             format!("attachment; filename=\"{}\"", metainfo.name),
         )
-        .header(
-            "Last-Modified",
-            last_modified,
-        )
+        .header("Last-Modified", last_modified)
         .content_length(metainfo.size as u64)
         .no_chunking()
         .streaming(body))
@@ -642,15 +720,30 @@ pub(crate) async fn upload_file_or_upload_chunk_longpath(
         .map_err(|_| BadRequest)?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
-        .join(bucket_name)
-        .join(object_name)
-        .join(object_suffix);
+        .join(&bucket_name)
+        .join(&object_name)
+        .join(&object_suffix);
+    let object_key = PathBuf::from(&object_name)
+        .join(&object_suffix)
+        .to_string_lossy()
+        .to_string();
     match (query.upload_id, query.part_number) {
-        (Some(_upload_id), Some(_part_number)) => {
+        (Some(upload_id), Some(part_number)) => {
             println!("long path");
-            Ok(HttpResponse::Ok().content_type("application/xml").finish())
+            upload_chunk(&bucket_name, &object_key, &part_number, &upload_id, body).await
         }
-        _ => upload_file(file_path, body).await,
+        _ => {
+            if let Some(copy_source) = req.headers().get("x-amz-copy-source") {
+                copy_object(
+                    copy_source.to_str().map_err(|_| BadRequest)?,
+                    &bucket_name,
+                    &object_key,
+                )
+                .await
+            } else {
+                upload_file(file_path, body).await
+            }
+        }
     }
 }
 pub(crate) async fn delete_file_longpath(req: web::HttpRequest) -> HandlerResponse {
