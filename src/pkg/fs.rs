@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context};
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use hex::ToHex;
-use ntex::util::{Bytes};
+use ntex::util::Bytes;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;

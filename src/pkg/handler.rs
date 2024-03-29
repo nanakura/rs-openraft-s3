@@ -11,7 +11,7 @@ use crate::pkg::model::{
 use crate::pkg::util::cry;
 use crate::pkg::util::date::date_format_to_second;
 use anyhow::{anyhow, Context};
-use chrono::{Utc};
+use chrono::Utc;
 use futures::future::ok;
 use futures::stream::once;
 use futures::StreamExt;
@@ -21,19 +21,29 @@ use ntex::web;
 use ntex::web::types::Query;
 use ntex::web::HttpResponse;
 use quick_xml::se::to_string;
+use rayon::prelude::*;
 use serde::Deserialize;
 use std::fs::read_dir;
 use std::io;
-use std::io::{BufReader};
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use zstd::zstd_safe::WriteBuf;
-use rayon::prelude::*;
 
 static DATA_DIR: &str = "data";
 static BASIC_PATH_SUFFIX: &str = "buckets";
 
 type HandlerResponse = Result<HttpResponse, AppError>;
+
+fn get_path_param(req: &web::HttpRequest, name: &str) -> Result<String, AppError> {
+    let param: String = req
+        .match_info()
+        .query(name)
+        .parse()
+        .map_err(|_| BadRequest)?;
+    Ok(param)
+}
+
 pub(crate) async fn list_bucket() -> HandlerResponse {
     let dir_path = PathBuf::from(DATA_DIR).join(BASIC_PATH_SUFFIX);
     let dir_path = dir_path.as_path();
@@ -155,11 +165,8 @@ pub(crate) async fn get_bucket(
     req: web::HttpRequest,
     Query(query): Query<GetBucketQueryParams>,
 ) -> HandlerResponse {
-    let bucket_name: String = req
-        .match_info()
-        .query("bucket")
-        .parse()
-        .map_err(|_| BadRequest)?;
+    let bucket_name: String = get_path_param(&req, "bucket")?;
+
     let bucket_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(&bucket_name);
@@ -201,11 +208,7 @@ pub(crate) async fn get_bucket(
     }
 }
 pub(crate) async fn head_bucket(req: web::HttpRequest) -> HandlerResponse {
-    let bucket_name: String = req
-        .match_info()
-        .query("bucket")
-        .parse()
-        .map_err(|_| BadRequest)?;
+    let bucket_name: String = get_path_param(&req, "bucket")?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name);
@@ -218,11 +221,7 @@ pub(crate) async fn head_bucket(req: web::HttpRequest) -> HandlerResponse {
     }
 }
 pub(crate) async fn create_bucket(req: web::HttpRequest) -> HandlerResponse {
-    let bucket_name: String = req
-        .match_info()
-        .query("bucket")
-        .parse()
-        .map_err(|_| BadRequest)?;
+    let bucket_name: String = get_path_param(&req, "bucket")?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name);
@@ -231,11 +230,7 @@ pub(crate) async fn create_bucket(req: web::HttpRequest) -> HandlerResponse {
 }
 
 pub(crate) async fn delete_bucket(req: web::HttpRequest) -> HandlerResponse {
-    let bucket_name: String = req
-        .match_info()
-        .query("bucket")
-        .parse()
-        .map_err(|_| BadRequest)?;
+    let bucket_name: String = get_path_param(&req, "bucket")?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name);
@@ -259,16 +254,8 @@ pub(crate) async fn init_chunk_or_combine_chunk(
     mut body: web::types::Payload,
     Query(query): Query<InitChunkOrCombineQuery>,
 ) -> HandlerResponse {
-    let bucket_name: String = req
-        .match_info()
-        .query("bucket")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_name: String = req
-        .match_info()
-        .query("object")
-        .parse()
-        .map_err(|_| BadRequest)?;
+    let bucket_name: String = get_path_param(&req, "bucket")?;
+    let object_name: String = get_path_param(&req, "object")?;
     if let Some(upload_id) = query.upload_id {
         let mut bytes = BytesMut::new();
         while let Some(item) = body.next().await {
@@ -289,21 +276,9 @@ pub(crate) async fn init_chunk_or_combine_chunk_longpath(
     mut body: web::types::Payload,
     Query(query): Query<InitChunkOrCombineQuery>,
 ) -> HandlerResponse {
-    let bucket_name: String = req
-        .match_info()
-        .query("bucket")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_name: String = req
-        .match_info()
-        .query("object")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_suffix: String = req
-        .match_info()
-        .query("objectSuffix")
-        .parse()
-        .map_err(|_| BadRequest)?;
+    let bucket_name: String = get_path_param(&req, "bucket")?;
+    let object_name: String = get_path_param(&req, "object")?;
+    let object_suffix: String = get_path_param(&req, "objectSuffix")?;
     if let Some(upload_id) = query.upload_id {
         let mut bytes = BytesMut::new();
         while let Some(item) = body.next().await {
@@ -418,7 +393,8 @@ async fn combine_chunk(
     metadata.chunks = chunks;
     metadata.time = Utc::now();
 
-    let metadata_dir = PathBuf::from(DATA_DIR).join(BASIC_PATH_SUFFIX)
+    let metadata_dir = PathBuf::from(DATA_DIR)
+        .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
         .join(object_key)
         .to_string_lossy()
@@ -438,16 +414,8 @@ async fn combine_chunk(
 }
 
 pub(crate) async fn head_object(req: web::HttpRequest) -> HandlerResponse {
-    let bucket_name: String = req
-        .match_info()
-        .query("bucket")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_name: String = req
-        .match_info()
-        .query("object")
-        .parse()
-        .map_err(|_| BadRequest)?;
+    let bucket_name: String = get_path_param(&req, "bucket")?;
+    let object_name: String = get_path_param(&req, "object")?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
@@ -468,16 +436,8 @@ pub(crate) async fn upload_file_or_upload_chunk(
     body: web::types::Payload,
     Query(query): Query<UploadFileOrChunkQuery>,
 ) -> HandlerResponse {
-    let bucket_name: String = req
-        .match_info()
-        .query("bucket")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_name: String = req
-        .match_info()
-        .query("object")
-        .parse()
-        .map_err(|_| BadRequest)?;
+    let bucket_name: String = get_path_param(&req, "bucket")?;
+    let object_name: String = get_path_param(&req, "object")?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(&bucket_name)
@@ -567,16 +527,8 @@ pub(crate) async fn upload_chunk(
 }
 
 pub(crate) async fn delete_file(req: web::HttpRequest) -> HandlerResponse {
-    let bucket_name: String = req
-        .match_info()
-        .query("bucket")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_name: String = req
-        .match_info()
-        .query("object")
-        .parse()
-        .map_err(|_| BadRequest)?;
+    let bucket_name: String = get_path_param(&req, "bucket")?;
+    let object_name: String = get_path_param(&req, "object")?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
@@ -648,21 +600,9 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
 }
 
 pub(crate) async fn head_object_longpath(req: web::HttpRequest) -> HandlerResponse {
-    let bucket_name: String = req
-        .match_info()
-        .query("bucket")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_name: String = req
-        .match_info()
-        .query("object")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_suffix: String = req
-        .match_info()
-        .query("objectSuffix")
-        .parse()
-        .map_err(|_| BadRequest)?;
+    let bucket_name: String = get_path_param(&req, "bucket")?;
+    let object_name: String = get_path_param(&req, "object")?;
+    let object_suffix: String = get_path_param(&req, "objectSuffix")?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
@@ -704,21 +644,9 @@ pub(crate) async fn upload_file_or_upload_chunk_longpath(
     body: web::types::Payload,
     Query(query): Query<UploadFileOrChunkQuery>,
 ) -> HandlerResponse {
-    let bucket_name: String = req
-        .match_info()
-        .query("bucket")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_name: String = req
-        .match_info()
-        .query("object")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_suffix: String = req
-        .match_info()
-        .query("objectSuffix")
-        .parse()
-        .map_err(|_| BadRequest)?;
+    let bucket_name: String = get_path_param(&req, "bucket")?;
+    let object_name: String = get_path_param(&req, "object")?;
+    let object_suffix: String = get_path_param(&req, "objectSuffix")?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(&bucket_name)
@@ -748,21 +676,9 @@ pub(crate) async fn upload_file_or_upload_chunk_longpath(
     }
 }
 pub(crate) async fn delete_file_longpath(req: web::HttpRequest) -> HandlerResponse {
-    let bucket_name: String = req
-        .match_info()
-        .query("bucket")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_name: String = req
-        .match_info()
-        .query("object")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_suffix: String = req
-        .match_info()
-        .query("objectSuffix")
-        .parse()
-        .map_err(|_| BadRequest)?;
+    let bucket_name: String = get_path_param(&req, "bucket")?;
+    let object_name: String = get_path_param(&req, "object")?;
+    let object_suffix: String = get_path_param(&req, "objectSuffix")?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
@@ -771,21 +687,9 @@ pub(crate) async fn delete_file_longpath(req: web::HttpRequest) -> HandlerRespon
     do_delete_file(file_path).await
 }
 pub(crate) async fn download_file_longpath(req: web::HttpRequest) -> HandlerResponse {
-    let bucket_name: String = req
-        .match_info()
-        .query("bucket")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_name: String = req
-        .match_info()
-        .query("object")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_suffix: String = req
-        .match_info()
-        .query("objectSuffix")
-        .parse()
-        .map_err(|_| BadRequest)?;
+    let bucket_name: String = get_path_param(&req, "bucket")?;
+    let object_name: String = get_path_param(&req, "object")?;
+    let object_suffix: String = get_path_param(&req, "objectSuffix")?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
@@ -794,16 +698,8 @@ pub(crate) async fn download_file_longpath(req: web::HttpRequest) -> HandlerResp
     do_download_file(file_path).await
 }
 pub(crate) async fn download_file(req: web::HttpRequest) -> HandlerResponse {
-    let bucket_name: String = req
-        .match_info()
-        .query("bucket")
-        .parse()
-        .map_err(|_| BadRequest)?;
-    let object_name: String = req
-        .match_info()
-        .query("object")
-        .parse()
-        .map_err(|_| BadRequest)?;
+    let bucket_name: String = get_path_param(&req, "bucket")?;
+    let object_name: String = get_path_param(&req, "object")?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
