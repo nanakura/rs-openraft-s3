@@ -27,6 +27,7 @@ use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use futures::future::ok;
 use futures::stream::once;
+use ntex::http::body::MessageBody;
 use uuid::Uuid;
 use zstd::zstd_safe::WriteBuf;
 
@@ -530,7 +531,7 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
     };
     let mut bytes = BytesMut::new();
     while let Some(item) = body.next().await {
-        let item = item.context("")?;
+        let item = item.map_err(|err|anyhow!(err.to_string()))?;
         bytes.extend_from_slice(&item);
     }
     let chunks = bytes.chunks(8 << 20);
@@ -550,6 +551,7 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
             save_file(&sha, &compressed_chunk)?;
         }
     }
+    // test pass println!("size:{}", file_size);
     let metainfo = Metadata {
         name: file_name,
         size: file_size,
@@ -602,6 +604,7 @@ async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
     let metainfo = fs::load_metadata(&metainfo_file_path)?;
 
     let body = once(ok::<_, web::Error>(Bytes::from_static(b"")));
+    let last_modified = date_format_to_second(metainfo.time);
     Ok(web::HttpResponse::Ok()
         .content_type(metainfo.file_type)
         .header(
@@ -610,7 +613,7 @@ async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
         )
         .header(
             "Last-Modified",
-            metainfo.time.format("%Y-%m-%d %H:%M:%S").to_string(),
+            last_modified,
         )
         .content_length(metainfo.size as u64)
         .no_chunking()
@@ -724,6 +727,7 @@ async fn do_download_file(file_path: PathBuf) -> HandlerResponse {
     Ok(web::HttpResponse::Ok()
         .header("Content-Type", "application/octet-stream")
         .header("Content-Length", meta_info.size)
+        .header("Last-Modified", date_format_to_second(meta_info.time))
         .header("Content-Disposition", content_disposition)
         .streaming(body))
 }

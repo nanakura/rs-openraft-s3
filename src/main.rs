@@ -1,3 +1,4 @@
+#![feature(fn_traits, unboxed_closures)]
 #[global_allocator]
 static ALLOC: snmalloc_rs::SnMalloc = snmalloc_rs::SnMalloc;
 mod pkg;
@@ -20,8 +21,6 @@ async fn main() -> anyhow::Result<()> {
         let app = web::App::new()
             .wrap(cors)
             .wrap(middleware::Logger::default())
-            .service(
-                web::scope("/s3")
                     .route("/", web::get().to(list_bucket))
                     .route("/{bucket}/", web::get().to(get_bucket))
                     .route("/{bucket}/", web::head().to(head_bucket))
@@ -57,12 +56,11 @@ async fn main() -> anyhow::Result<()> {
                     .route(
                         "/{bucket}/{object}/{objectSuffix}*",
                         web::get().to(download_file_longpath),
-                    ),
-            );
+                    );
 
         app
     })
-    .bind(("0.0.0.0", 8080))?
+    .bind(("0.0.0.0", 9000))?
     .run()
     .await?;
     Ok(())
