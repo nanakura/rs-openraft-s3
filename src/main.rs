@@ -18,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
     web::HttpServer::new(move || {
         let cors = Cors::default();
-        let app = web::App::new()
+        web::App::new()
             .wrap(cors)
             .wrap(middleware::Logger::default())
             .route("/", web::get().to(list_bucket))
@@ -56,9 +56,7 @@ async fn main() -> anyhow::Result<()> {
             .route(
                 "/{bucket}/{object}/{objectSuffix}*",
                 web::get().to(download_file_longpath),
-            );
-
-        app
+            )
     })
     .bind(("0.0.0.0", 9000))?
     .run()

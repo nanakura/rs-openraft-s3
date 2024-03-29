@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context};
 use chrono::{DateTime, Utc};
-use futures::{SinkExt, Stream};
+use futures::Stream;
 use hex::ToHex;
 use ntex::util::Bytes;
 use serde::{Deserialize, Serialize};
@@ -9,9 +9,6 @@ use std::fs;
 use std::fs::File;
 use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::slice::Iter;
-use std::sync::Arc;
-use futures::stream::FuturesUnordered;
 use zstd::stream::read::Decoder;
 use zstd::stream::write::Encoder;
 
@@ -97,7 +94,7 @@ pub(crate) fn load_metadata(meta_file_path: &str) -> anyhow::Result<Metadata> {
 
 pub(crate) struct UncompressStream {
     hashes: Vec<String>,
-    idx: usize
+    idx: usize,
 }
 
 impl UncompressStream {
@@ -113,13 +110,13 @@ impl Stream for UncompressStream {
         mut self: std::pin::Pin<&mut Self>,
         _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
-        if self.idx > self.hashes.len() {
+        if self.idx >= self.hashes.len() {
             std::task::Poll::Ready(None)
         } else {
             let x = &self.hashes[self.idx];
             let path = path_from_hash(x).to_string_lossy().to_string();
             if let Ok(res) = decompress_chunk(&path) {
-                self.idx+=1;
+                self.idx += 1;
                 std::task::Poll::Ready(Some(Ok(Bytes::from(res))))
             } else {
                 std::task::Poll::Ready(None)
@@ -133,6 +130,7 @@ impl Stream for UncompressStream {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) async fn multi_decompressed_reader(
     file_paths: &[String],
 ) -> anyhow::Result<Vec<Box<dyn io::Read + Send + Unpin>>> {
