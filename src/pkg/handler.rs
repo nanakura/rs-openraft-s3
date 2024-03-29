@@ -418,7 +418,7 @@ async fn combine_chunk(
     metadata.chunks = chunks;
     metadata.time = Utc::now();
 
-    let metadata_dir = PathBuf::from(DATA_DIR)
+    let metadata_dir = PathBuf::from(DATA_DIR).join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
         .join(object_key)
         .to_string_lossy()
