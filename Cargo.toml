@@ -27,6 +27,9 @@ mime_guess = "2.0.4"
 uuid = { version = "1.8.0", features = ["v4"] }
 crypto-hash = "0.3.4"
 overloadf = "0.1.8"
+hmac = "0.12.1"
+hex-literal = "0.4.1"
+url = "2.5.0"
 
 [profile.dev]
 debug = 0

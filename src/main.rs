@@ -12,6 +12,7 @@ use crate::pkg::handler::{
 use ntex::web;
 use ntex::web::middleware;
 use ntex_cors::Cors;
+use crate::pkg::middleware::CredentialsV4;
 
 #[ntex::main]
 async fn main() -> anyhow::Result<()> {
@@ -21,6 +22,7 @@ async fn main() -> anyhow::Result<()> {
         web::App::new()
             .wrap(cors)
             .wrap(middleware::Logger::default())
+            .wrap(CredentialsV4)
             .route("/", web::get().to(list_bucket))
             .route("/{bucket}/", web::get().to(get_bucket))
             .route("/{bucket}/", web::head().to(head_bucket))
