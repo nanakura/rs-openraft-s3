@@ -39,7 +39,7 @@ where
         let access_key_id = "minioadmin";
         let secret_access_key = "minioadmin";
         let authorization = req.headers().get("Authorization");
-        let mut flag = true;
+        let mut flag = false;
         if authorization.is_some() {
             match valid_authorization_header(&req, access_key_id, secret_access_key) {
                 Ok(b) => flag = b,
