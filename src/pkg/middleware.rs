@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use crate::pkg::util::cry::{do_bytes_to_hex, do_hex, do_hmac_sha256};
+use anyhow::Context;
 use chrono::{DateTime, Utc};
 use ntex::service::{Middleware, Service, ServiceCtx};
 use ntex::web;
 use ntex::web::HttpResponse;
-use crate::pkg::util::cry::{do_bytes_to_hex, do_hex, do_hmac_sha256};
-
+use std::collections::HashMap;
 
 pub struct CredentialsV4;
 
@@ -21,24 +21,28 @@ pub struct CredentialsV4Middleware<S> {
 }
 
 impl<S, Err> Service<web::WebRequest<Err>> for CredentialsV4Middleware<S>
-    where
-        S: Service<web::WebRequest<Err>, Response = web::WebResponse, Error = web::Error>,
-        Err: web::ErrorRenderer,
+where
+    S: Service<web::WebRequest<Err>, Response = web::WebResponse, Error = web::Error>,
+    Err: web::ErrorRenderer,
 {
     type Response = web::WebResponse;
     type Error = web::Error;
 
     ntex::forward_poll_ready!(service);
 
-    async fn call(&self, req: web::WebRequest<Err>, ctx: ServiceCtx<'_, Self>) -> Result<Self::Response, Self::Error> {
+    async fn call(
+        &self,
+        req: web::WebRequest<Err>,
+        ctx: ServiceCtx<'_, Self>,
+    ) -> Result<Self::Response, Self::Error> {
         // do filter here
         let access_key_id = "minioadmin";
         let secret_access_key = "minioadmin";
         let authorization = req.headers().get("Authorization");
         let mut flag = true;
-        if let Some(_) = authorization {
+        if authorization.is_some() {
             match valid_authorization_header(&req, access_key_id, secret_access_key) {
-                Ok(b) => flag=b,
+                Ok(b) => flag = b,
                 Err(err) => {
                     println!("middleware error: {}", err);
                     flag = false
@@ -48,9 +52,9 @@ impl<S, Err> Service<web::WebRequest<Err>> for CredentialsV4Middleware<S>
             let qs = req.query_string();
             let credential = url::form_urlencoded::parse(qs.as_bytes())
                 .find(|(key, _)| key == "X-Amz-Credential");
-            if let Some(_) = credential {
+            if credential.is_some() {
                 match valid_authorization_url(&req, access_key_id, secret_access_key) {
-                    Ok(b) => flag=b,
+                    Ok(b) => flag = b,
                     Err(err) => {
                         println!("middleware error: {}", err);
                         flag = false
@@ -73,16 +77,34 @@ fn valid_authorization_header(
     access_key_id: &str,
     secret_access_key: &str,
 ) -> anyhow::Result<bool> {
-    let authorization = request.headers().get("Authorization").unwrap().to_str().unwrap();
-    let request_date = request.headers().get("x-amz-date").unwrap().to_str().unwrap();
-    let content_hash = request.headers().get("x-amz-content-sha256").unwrap().to_str().unwrap();
+    let authorization = request
+        .headers()
+        .get("Authorization")
+        .context("Authorization不存在")?
+        .to_str()?;
+    let request_date = request
+        .headers()
+        .get("x-amz-date")
+        .context("x-amz-date不存在")?
+        .to_str()?;
+    let content_hash = request
+        .headers()
+        .get("x-amz-content-sha256")
+        .context("x-amz-content-sha256不存在")?
+        .to_str()?;
     let http_method = request.method().to_string();
-    let uri = request.uri().path().split('?').next().unwrap().to_owned();
+    let uri = request
+        .uri()
+        .path()
+        .split('?')
+        .next()
+        .context("不存在")?
+        .to_owned();
     let query_string = request.query_string().to_owned();
 
     // Splitting authorization into parts
     let parts: Vec<&str> = authorization.trim().split(',').collect();
-    let credential = parts[0].split('=').nth(1).unwrap();
+    let credential = parts[0].split('=').nth(1).context("不存在")?;
     let credentials: Vec<&str> = credential.split('/').collect();
     let access_key = credentials[0];
     if access_key_id != access_key {
@@ -93,16 +115,19 @@ fn valid_authorization_header(
     let service = credentials[3];
     let aws4_request = credentials[4];
 
-    let signed_header = parts[1].split('=').nth(1).unwrap();
+    let signed_header = parts[1].split('=').nth(1).context("不存在")?;
     let signed_headers: Vec<&str> = signed_header.split(';').collect();
-    let signature = parts[2].split('=').nth(1).unwrap();
+    let signature = parts[2].split('=').nth(1).context("不存在")?;
 
     let string_to_sign = {
         let mut string_to_sign = String::new();
         string_to_sign.push_str("AWS4-HMAC-SHA256\n");
         string_to_sign.push_str(request_date);
         string_to_sign.push('\n');
-        string_to_sign.push_str(&format!("{}/{}/{}/{}\n", date, region, service, aws4_request));
+        string_to_sign.push_str(&format!(
+            "{}/{}/{}/{}\n",
+            date, region, service, aws4_request
+        ));
 
         let mut hashed_canonical_request = String::new();
         hashed_canonical_request.push_str(&format!("{}\n", http_method));
@@ -119,13 +144,17 @@ fn valid_authorization_header(
             query_string_builder.pop(); // Remove the trailing '&'
             hashed_canonical_request.push_str(&format!("{}\n", query_string_builder));
         } else {
-            hashed_canonical_request.push_str("\n");
+            hashed_canonical_request.push('\n');
         }
 
         let headers = request.headers();
         for name in signed_headers {
             if let Some(header_value) = headers.get(name) {
-                hashed_canonical_request.push_str(&format!("{}:{}\n", name, header_value.to_str().unwrap()));
+                hashed_canonical_request.push_str(&format!(
+                    "{}:{}\n",
+                    name,
+                    header_value.to_str()?
+                ));
             }
         }
         hashed_canonical_request.push('\n');
@@ -155,16 +184,24 @@ fn valid_authorization_url(
 ) -> anyhow::Result<bool> {
     let qs = request.query_string();
     let request_date = url::form_urlencoded::parse(qs.as_bytes())
-                .find(|(key, _)| key == "X-Amz-Date")
-                .map(|(_, value)| value.into_owned()).unwrap();
+        .find(|(key, _)| key == "X-Amz-Date")
+        .map(|(_, value)| value.into_owned())
+        .context("X-Amz-Date不存在")?;
     let content_hash = "UNSIGNED-PAYLOAD";
     let http_method = request.method().to_string();
-    let uri = request.uri().path().split('?').next().unwrap().to_owned();
+    let uri = request
+        .uri()
+        .path()
+        .split('?')
+        .next()
+        .context("不存在")?
+        .to_owned();
     let query_string = request.query_string().to_owned();
 
     let credential = url::form_urlencoded::parse(qs.as_bytes())
-                .find(|(key, _)| key == "X-Amz-Credential")
-                .map(|(_, value)| value.into_owned()).unwrap();
+        .find(|(key, _)| key == "X-Amz-Credential")
+        .map(|(_, value)| value.into_owned())
+        .context("X-Amz-Credential不存在")?;
     let credentials: Vec<&str> = credential.split('/').collect();
     let access_key = credentials[0];
     if access_key_id != access_key {
@@ -177,20 +214,23 @@ fn valid_authorization_url(
 
     // 第二部分-签名头中包含哪些字段
     let signed_header = url::form_urlencoded::parse(qs.as_bytes())
-                .find(|(key, _)| key == "X-Amz-SignedHeaders")
-                .map(|(_, value)| value.into_owned()).unwrap();
+        .find(|(key, _)| key == "X-Amz-SignedHeaders")
+        .map(|(_, value)| value.into_owned())
+        .context("X-Amz-SignedHeaders不存在")?;
     let signed_headers: Vec<&str> = signed_header.split(';').collect();
 
     // 第三部分-生成的签名
     let signature = url::form_urlencoded::parse(qs.as_bytes())
-                .find(|(key, _)| key == "X-Amz-Signature")
-                .map(|(_, value)| value.into_owned()).unwrap();
+        .find(|(key, _)| key == "X-Amz-Signature")
+        .map(|(_, value)| value.into_owned())
+        .context("X-Amz-Signature不存在")?;
 
     // 验证过期
     let expires = url::form_urlencoded::parse(qs.as_bytes())
-                .find(|(key, _)| key == "X-Amz-Expires")
-                .and_then(|(_, value)| value.parse::<i64>().ok()).unwrap();
-    let request_date_time = DateTime::parse_from_rfc3339(&request_date).unwrap();
+        .find(|(key, _)| key == "X-Amz-Expires")
+        .and_then(|(_, value)| value.parse::<i64>().ok())
+        .context("X-Amz-Expires不存在")?;
+    let request_date_time = DateTime::parse_from_rfc3339(&request_date)?;
     let end_date = request_date_time + chrono::Duration::seconds(expires);
     if end_date < Utc::now() {
         return Ok(false);
@@ -200,7 +240,10 @@ fn valid_authorization_url(
         string_to_sign.push_str("AWS4-HMAC-SHA256\n");
         string_to_sign.push_str(&request_date);
         string_to_sign.push('\n');
-        string_to_sign.push_str(&format!("{}/{}/{}/{}\n", date, region, service, aws4_request));
+        string_to_sign.push_str(&format!(
+            "{}/{}/{}/{}\n",
+            date, region, service, aws4_request
+        ));
 
         let mut hashed_canonical_request = String::new();
         hashed_canonical_request.push_str(&format!("{}\n", http_method));
@@ -217,13 +260,17 @@ fn valid_authorization_url(
             query_string_builder.pop(); // Remove the trailing '&'
             hashed_canonical_request.push_str(&format!("{}\n", query_string_builder));
         } else {
-            hashed_canonical_request.push_str("\n");
+            hashed_canonical_request.push('\n');
         }
 
         let headers = request.headers();
         for name in signed_headers {
             if let Some(header_value) = headers.get(name) {
-                hashed_canonical_request.push_str(&format!("{}:{}\n", name, header_value.to_str().unwrap()));
+                hashed_canonical_request.push_str(&format!(
+                    "{}:{}\n",
+                    name,
+                    header_value.to_str()?
+                ));
             }
         }
         hashed_canonical_request.push('\n');

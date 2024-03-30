@@ -1,6 +1,6 @@
 use crypto_hash::{hex_digest, Algorithm};
 use hmac::{Hmac, Mac};
-use sha2::{Sha256};
+use sha2::Sha256;
 
 // const DEFAULT_KEY: [u8; 8] = [76, 111, 99, 97, 108, 83, 51, 88];
 #[allow(dead_code)]
@@ -54,7 +54,6 @@ pub fn do_bytes_to_hex(bytes: &[u8]) -> String {
 //     let string = String::from_utf8(bytes)?;
 //     Ok(string)
 // }
-
 
 #[cfg(test)]
 mod test {
