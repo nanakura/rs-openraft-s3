@@ -26,8 +26,8 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use zstd::zstd_safe::WriteBuf;
 
-static DATA_DIR: &str = "data";
-static BASIC_PATH_SUFFIX: &str = "buckets";
+const DATA_DIR: &str = "data";
+const BASIC_PATH_SUFFIX: &str = "buckets";
 
 type HandlerResponse = Result<HttpResponse, AppError>;
 

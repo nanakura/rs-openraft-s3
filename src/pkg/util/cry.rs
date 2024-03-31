@@ -1,24 +1,49 @@
+use aes::Aes256;
+use base64::engine::general_purpose;
+use base64::Engine;
+use block_modes::block_padding::Pkcs7;
+use block_modes::{BlockMode, Cbc};
 use crypto_hash::{hex_digest, Algorithm};
 use hmac::{Hmac, Mac};
+use ntex::util::BytesMut;
+use rand::seq::IndexedRandom;
 use sha2::Sha256;
+use zstd::zstd_safe::WriteBuf;
 
-// const DEFAULT_KEY: [u8; 8] = [76, 111, 99, 97, 108, 83, 51, 88];
-#[allow(dead_code)]
-static DEFAULT_KEY: &str = "LocalS3X";
+const DEFAULT_KEY: &str = "000102030405060708090A0B0C0D0E0F";
 
 pub fn encrypt_by_md5(s: &str) -> String {
     let digest = hex_digest(Algorithm::MD5, s.as_bytes());
     digest
 }
 
-#[allow(dead_code)]
-pub fn encrypt_by_des(data: &str) -> anyhow::Result<String> {
-    Ok(data.to_string())
+const BASE_STR: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+type AesCbc = Cbc<Aes256, Pkcs7>;
+fn gen_ascii_chars(size: usize) -> String {
+    let mut rng = &mut rand::thread_rng();
+    String::from_utf8(
+        BASE_STR
+            .as_bytes()
+            .choose_multiple(&mut rng, size)
+            .cloned()
+            .collect(),
+    )
+    .unwrap()
+}
+pub fn aes_256_cbc_encrypt(data: &str) -> String {
+    let iv_str = gen_ascii_chars(16);
+    let iv = iv_str.as_bytes();
+    let cipher = AesCbc::new_from_slices(DEFAULT_KEY.as_bytes(), iv).unwrap();
+    let ciphertext = cipher.encrypt_vec(data.as_bytes());
+    let mut buffer = BytesMut::from(iv);
+    buffer.extend_from_slice(&ciphertext);
+    general_purpose::STANDARD.encode(buffer.as_slice())
 }
 
-#[allow(dead_code)]
-pub fn decrypt_by_des(data: &str) -> anyhow::Result<String> {
-    Ok(data.to_string())
+pub fn aes_256_cbc_decrypt(data: &str) -> String {
+    let bytes = general_purpose::STANDARD.decode(data).unwrap();
+    let cipher = AesCbc::new_from_slices(DEFAULT_KEY.as_bytes(), &bytes[0..16]).unwrap();
+    String::from_utf8(cipher.decrypt_vec(&bytes[16..]).unwrap()).unwrap()
 }
 
 type HmacSha256 = Hmac<Sha256>;
@@ -65,5 +90,13 @@ mod test {
             hex::encode(code),
             "97d2a569059bbcd8ead4444ff99071f4c01d005bcefe0d3567e1be628e5fdcd9"
         );
+    }
+
+    #[test]
+    fn test2() {
+        let s = "xxxxxx";
+        let en = aes_256_cbc_encrypt(s);
+        let de = aes_256_cbc_decrypt(&en);
+        assert_eq!(s, &de);
     }
 }
