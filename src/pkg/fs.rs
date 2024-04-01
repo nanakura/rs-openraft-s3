@@ -83,17 +83,15 @@ fn decompress_chunk(chunk_path: &str) -> anyhow::Result<Vec<u8>> {
 pub(crate) fn save_metadata(meta_file_path: &str, metadata: &Metadata) -> anyhow::Result<()> {
     let meta_data = serde_json::to_string(metadata)?;
     fs::create_dir_all(Path::new(meta_file_path).parent().unwrap())?;
-    let meta_bytes = cry::aes_256_cbc_encrypt(&meta_data);
-    let meta_bytes = meta_bytes.as_bytes();
-    fs::write(meta_file_path, meta_bytes)?;
+    let meta_bytes = cry::aes_256_cbc_encrypt(&meta_data)?;
+    fs::write(meta_file_path, &meta_bytes)?;
     Ok(())
 }
 
 pub(crate) fn load_metadata(meta_file_path: &str) -> anyhow::Result<Metadata> {
     let metadata_bytes = fs::read(meta_file_path).context("元数据地址不存在")?;
-    let metadata_bytes = cry::aes_256_cbc_decrypt(&String::from_utf8(metadata_bytes)?);
-    let metadata_bytes = metadata_bytes.as_bytes();
-    let metadata = serde_json::from_slice(metadata_bytes).map_err(|err| anyhow!(err))?;
+    let metadata_bytes = cry::aes_256_cbc_decrypt(&metadata_bytes)?;
+    let metadata = serde_json::from_slice(&metadata_bytes).map_err(|err| anyhow!(err))?;
     Ok(metadata)
 }
 

@@ -1,6 +1,4 @@
 use aes::Aes256;
-use base64::engine::general_purpose;
-use base64::Engine;
 use block_modes::block_padding::Pkcs7;
 use block_modes::{BlockMode, Cbc};
 use crypto_hash::{hex_digest, Algorithm};
@@ -30,20 +28,20 @@ fn gen_ascii_chars(size: usize) -> String {
     )
     .unwrap()
 }
-pub fn aes_256_cbc_encrypt(data: &str) -> String {
+pub fn aes_256_cbc_encrypt(data: &str) -> anyhow::Result<Vec<u8>> {
     let iv_str = gen_ascii_chars(16);
     let iv = iv_str.as_bytes();
-    let cipher = AesCbc::new_from_slices(DEFAULT_KEY.as_bytes(), iv).unwrap();
+    let cipher = AesCbc::new_from_slices(DEFAULT_KEY.as_bytes(), iv)?;
     let ciphertext = cipher.encrypt_vec(data.as_bytes());
     let mut buffer = BytesMut::from(iv);
     buffer.extend_from_slice(&ciphertext);
-    general_purpose::STANDARD.encode(buffer.as_slice())
+    Ok(Vec::from(buffer.as_slice()))
 }
 
-pub fn aes_256_cbc_decrypt(data: &str) -> String {
-    let bytes = general_purpose::STANDARD.decode(data).unwrap();
-    let cipher = AesCbc::new_from_slices(DEFAULT_KEY.as_bytes(), &bytes[0..16]).unwrap();
-    String::from_utf8(cipher.decrypt_vec(&bytes[16..]).unwrap()).unwrap()
+pub fn aes_256_cbc_decrypt(data: &[u8]) -> anyhow::Result<Vec<u8>> {
+    //let bytes = general_purpose::STANDARD.decode(data)?;
+    let cipher = AesCbc::new_from_slices(DEFAULT_KEY.as_bytes(), &data[0..16])?;
+    Ok(cipher.decrypt_vec(&data[16..])?)
 }
 
 type HmacSha256 = Hmac<Sha256>;
@@ -95,8 +93,9 @@ mod test {
     #[test]
     fn test2() {
         let s = "xxxxxx";
-        let en = aes_256_cbc_encrypt(s);
-        let de = aes_256_cbc_decrypt(&en);
+        let en =  aes_256_cbc_encrypt(s).unwrap();
+        //let en = general_purpose::STANDARD.encode(&en);
+        let de = String::from_utf8(aes_256_cbc_decrypt(&en).unwrap()).unwrap();
         assert_eq!(s, &de);
     }
 }
