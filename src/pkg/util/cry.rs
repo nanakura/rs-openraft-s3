@@ -28,11 +28,11 @@ fn gen_ascii_chars(size: usize) -> String {
     )
     .unwrap()
 }
-pub fn aes_256_cbc_encrypt(data: &str) -> anyhow::Result<Vec<u8>> {
+pub fn aes_256_cbc_encrypt(data: &[u8]) -> anyhow::Result<Vec<u8>> {
     let iv_str = gen_ascii_chars(16);
     let iv = iv_str.as_bytes();
     let cipher = AesCbc::new_from_slices(DEFAULT_KEY.as_bytes(), iv)?;
-    let ciphertext = cipher.encrypt_vec(data.as_bytes());
+    let ciphertext = cipher.encrypt_vec(data);
     let mut buffer = BytesMut::from(iv);
     buffer.extend_from_slice(&ciphertext);
     Ok(Vec::from(buffer.as_slice()))
@@ -93,7 +93,7 @@ mod test {
     #[test]
     fn test2() {
         let s = "xxxxxx";
-        let en =  aes_256_cbc_encrypt(s).unwrap();
+        let en = aes_256_cbc_encrypt(s.as_bytes()).unwrap();
         //let en = general_purpose::STANDARD.encode(&en);
         let de = String::from_utf8(aes_256_cbc_decrypt(&en).unwrap()).unwrap();
         assert_eq!(s, &de);

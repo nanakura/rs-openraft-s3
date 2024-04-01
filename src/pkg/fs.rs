@@ -1,10 +1,10 @@
 use crate::pkg::util::cry;
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use hex::ToHex;
 use ntex::util::Bytes;
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Infallible, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::fs::File;
@@ -13,13 +13,13 @@ use std::path::{Path, PathBuf};
 use zstd::stream::read::Decoder;
 use zstd::stream::write::Encoder;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Archive, Deserialize, Serialize, Debug, PartialEq)]
+#[archive(compare(PartialEq), check_bytes)]
+#[archive_attr(derive(Debug))]
 pub struct Metadata {
     pub name: String,
-    pub size: usize,
-    #[serde(rename = "type")]
+    pub size: u64,
     pub file_type: String,
-    //#[serde(serialize_with = "serialize_date", deserialize_with = "deserialize_date")]
     pub time: DateTime<Utc>,
     pub chunks: Vec<String>,
 }
@@ -81,9 +81,10 @@ fn decompress_chunk(chunk_path: &str) -> anyhow::Result<Vec<u8>> {
 }
 
 pub(crate) fn save_metadata(meta_file_path: &str, metadata: &Metadata) -> anyhow::Result<()> {
-    let meta_data = serde_json::to_string(metadata)?;
+    let meta_data = rkyv::to_bytes::<_, 256>(metadata)?;
+    let meta_data = meta_data.as_slice();
     fs::create_dir_all(Path::new(meta_file_path).parent().unwrap())?;
-    let meta_bytes = cry::aes_256_cbc_encrypt(&meta_data)?;
+    let meta_bytes = cry::aes_256_cbc_encrypt(meta_data)?;
     fs::write(meta_file_path, &meta_bytes)?;
     Ok(())
 }
@@ -91,8 +92,10 @@ pub(crate) fn save_metadata(meta_file_path: &str, metadata: &Metadata) -> anyhow
 pub(crate) fn load_metadata(meta_file_path: &str) -> anyhow::Result<Metadata> {
     let metadata_bytes = fs::read(meta_file_path).context("元数据地址不存在")?;
     let metadata_bytes = cry::aes_256_cbc_decrypt(&metadata_bytes)?;
-    let metadata = serde_json::from_slice(&metadata_bytes).map_err(|err| anyhow!(err))?;
-    Ok(metadata)
+    let archived = rkyv::check_archived_root::<Metadata>(&metadata_bytes[..]).unwrap();
+    let res: Metadata = archived.deserialize(&mut Infallible)?;
+    //let res = <Metadata as Deserialize<Metadata, Infallible>>::deserialize(archived, &mut rkyv::Infallible).unwrap();
+    Ok(res)
 }
 
 pub(crate) struct UncompressStream {
@@ -183,7 +186,23 @@ pub(crate) fn split_file(
 
 #[cfg(test)]
 mod test {
+    use crate::pkg::fs::Metadata;
+    use rkyv::{Deserialize, Infallible};
 
     #[test]
-    fn test1() {}
+    fn test1() {
+        let m = Metadata {
+            name: "xxx".to_string(),
+            size: 10,
+            file_type: "xxxxx".to_string(),
+            time: Default::default(),
+            chunks: vec![],
+        };
+
+        let bytes = rkyv::to_bytes::<_, 256>(&m).unwrap();
+        let bytes = bytes.as_slice();
+        let archived = rkyv::check_archived_root::<Metadata>(&bytes[..]).unwrap();
+        let res: Metadata = archived.deserialize(&mut Infallible).unwrap();
+        assert_eq!(m, res)
+    }
 }

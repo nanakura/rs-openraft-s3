@@ -345,7 +345,7 @@ async fn combine_chunk(
     let mut part_etags = cmu.part_etags;
 
     let mut check = true;
-    let mut total_len: usize = 0;
+    let mut total_len: u64 = 0;
 
     let extension = &format!(".meta.{}", &upload_id);
     let mut tmp_metadata_dir = PathBuf::from(DATA_DIR)
@@ -370,7 +370,7 @@ async fn combine_chunk(
             .join("tmp")
             .join(upload_id)
             .join(&format!("{}", part_etag.part_number));
-        let len: usize = std::fs::read_to_string(len_path)
+        let len: u64 = std::fs::read_to_string(len_path)
             .context("读取长度文件失败")?
             .parse()
             .context("解析长度文件失败")?;
@@ -587,7 +587,7 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
     // test pass println!("size:{}", file_size);
     let metainfo = Metadata {
         name: file_name,
-        size: file_size,
+        size: file_size as u64,
         file_type: file_type.to_string(),
         time: Utc::now(),
         chunks: hashcodes,
