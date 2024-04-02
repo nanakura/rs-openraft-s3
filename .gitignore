@@ -2,4 +2,5 @@
 data/
 .idea/
 .vscode/
-
+*.stacks
+*.svg

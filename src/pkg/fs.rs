@@ -37,12 +37,12 @@ pub(crate) fn path_from_hash(hash: &str) -> PathBuf {
         .join(hash_suffix)
 }
 
-pub(crate) fn save_file(hash_code: &str, data: &[u8]) -> anyhow::Result<()> {
+pub(crate) async fn save_file(hash_code: &str, data: &[u8]) -> anyhow::Result<()> {
     let file_path = path_from_hash(hash_code);
 
     fs::create_dir_all(file_path.parent().unwrap())?;
 
-    fs::write(file_path, data)?;
+    tokio::fs::write(file_path, data).await?;
 
     Ok(())
 }
@@ -59,12 +59,12 @@ fn get_sha256_string(hash: &[u8]) -> String {
     hash_string[..15].to_uppercase()
 }
 
-pub(crate) fn sum_15bit_sha256(data: &[u8]) -> String {
+pub(crate) async fn sum_15bit_sha256(data: &[u8]) -> String {
     let sha256 = get_sha256(data);
     get_sha256_string(&sha256)
 }
 
-pub(crate) fn compress_chunk(chunk: &[u8]) -> anyhow::Result<Vec<u8>> {
+pub(crate) async fn compress_chunk(chunk: &[u8]) -> anyhow::Result<Vec<u8>> {
     let mut encoder = Encoder::new(Vec::new(), 0)?;
     encoder.write_all(chunk)?;
     let result = encoder.finish()?;
@@ -157,7 +157,7 @@ pub(crate) fn is_path_exist(hash: &str) -> bool {
 }
 
 #[allow(dead_code)]
-pub(crate) fn split_file(
+pub(crate) async fn split_file(
     mut reader: BufReader<File>,
     chunk_size: usize,
 ) -> anyhow::Result<Vec<String>> {
@@ -168,12 +168,12 @@ pub(crate) fn split_file(
 
         if read > 0 {
             let chunk = &buffer[..read];
-            let hash_code = sum_15bit_sha256(chunk);
+            let hash_code = sum_15bit_sha256(chunk).await;
             chunks.push(hash_code.clone());
 
             if !is_path_exist(&hash_code) {
-                let compressed_chunk = compress_chunk(chunk)?;
-                save_file(&hash_code, &compressed_chunk)?;
+                let compressed_chunk = compress_chunk(chunk).await?;
+                save_file(&hash_code, &compressed_chunk).await?;
             }
         }
 

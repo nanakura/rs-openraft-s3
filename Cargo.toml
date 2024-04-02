@@ -36,7 +36,7 @@ block-modes = "0.8.1"
 rkyv = { version = "0.7.44", default-features = false, features = ["std","size_64","validation", "bytecheck","alloc"] }
 
 [profile.dev]
-debug = 0
+debug = true
 
 [profile.release]
 lto = true

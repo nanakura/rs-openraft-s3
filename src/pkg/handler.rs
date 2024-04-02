@@ -23,6 +23,7 @@ use rayon::prelude::*;
 use serde::Deserialize;
 use std::fs::read_dir;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 use uuid::Uuid;
 use zstd::zstd_safe::WriteBuf;
 
@@ -432,7 +433,7 @@ pub struct UploadFileOrChunkQuery {
 }
 pub(crate) async fn upload_file_or_upload_chunk(
     req: web::HttpRequest,
-    body: web::types::Payload,
+    mut body: web::types::Payload,
     Query(query): Query<UploadFileOrChunkQuery>,
 ) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
@@ -443,7 +444,7 @@ pub(crate) async fn upload_file_or_upload_chunk(
         .join(&object_name);
     match (query.upload_id, query.part_number) {
         (Some(upload_id), Some(part_number)) => {
-            upload_chunk(&bucket_name, &object_name, &part_number, &upload_id, body).await
+            upload_chunk(&bucket_name, &object_name, &part_number, &upload_id, &mut body).await
         }
         _ => {
             if let Some(copy_source) = req.headers().get("x-amz-copy-source") {
@@ -454,7 +455,7 @@ pub(crate) async fn upload_file_or_upload_chunk(
                 )
                 .await
             } else {
-                upload_file(file_path, body).await
+                upload_file(file_path, &mut body).await
             }
         }
     }
@@ -501,23 +502,23 @@ pub(crate) async fn upload_chunk(
     _object_key: &str,
     part_number: &str,
     upload_id: &str,
-    mut body: web::types::Payload,
+    body: &mut web::types::Payload,
 ) -> HandlerResponse {
-    let mut bytes = BytesMut::new();
+    let mut bytes = Vec::new();
+    bytes.reserve(8<<20);
     while let Some(item) = body.next().await {
         let item = item.map_err(|err| anyhow!(err.to_string()))?;
         bytes.extend_from_slice(&item);
     }
-    let len = bytes.len();
-    let bytes = bytes.to_vec();
+    let len = bytes.len();;
     let part_path = PathBuf::from(DATA_DIR)
         .join("tmp")
         .join(upload_id)
         .join(part_number);
-    std::fs::write(part_path, format!("{}", len)).context("保存文件大小失败")?;
-    let hash = fs::sum_15bit_sha256(&bytes[..]);
-    let body = fs::compress_chunk(&bytes[..])?;
-    fs::save_file(&hash, &body[..])?;
+    tokio::fs::write(part_path, format!("{}", len)).await.context("保存文件大小失败")?;
+    let hash = fs::sum_15bit_sha256(&bytes).await;
+    let body = fs::compress_chunk(&bytes).await?;
+    fs::save_file(&hash, &body).await?;
     // let part_etag = PartETag {
     //     part_number: part_number.to_string().parse().context("parse partNumber failed")?,
     //     etag:hash,
@@ -546,7 +547,7 @@ async fn do_delete_file(file_path: PathBuf) -> HandlerResponse {
         .content_type("application/xml")
         .finish())
 }
-async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> HandlerResponse {
+async fn upload_file(file_path: PathBuf, body: &mut web::types::Payload) -> HandlerResponse {
     let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
     metainfo_file_path.push_str(".meta");
     let file_name = file_path
@@ -563,6 +564,7 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
         (sz, None) => sz,
     };
     let mut bytes = BytesMut::new();
+    bytes.reserve(8<<20);
     while let Some(item) = body.next().await {
         let item = item.map_err(|err| anyhow!(err.to_string()))?;
         bytes.extend_from_slice(&item);
@@ -571,7 +573,7 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
     let mut hashcodes: Vec<String> = Vec::new();
     let mut sz_flag = false;
     for chunk in chunks {
-        let sha = sum_15bit_sha256(chunk);
+        let sha = sum_15bit_sha256(chunk).await;
         if file_size == 0 || sz_flag {
             if !sz_flag {
                 sz_flag = true;
@@ -580,8 +582,8 @@ async fn upload_file(file_path: PathBuf, mut body: web::types::Payload) -> Handl
         }
         hashcodes.push(sha.clone());
         if !fs::is_path_exist(&sha) {
-            let compressed_chunk = fs::compress_chunk(chunk)?;
-            save_file(&sha, &compressed_chunk)?;
+            let compressed_chunk = fs::compress_chunk(chunk).await?;
+            save_file(&sha, &compressed_chunk).await?;
         }
     }
     // test pass println!("size:{}", file_size);
@@ -641,7 +643,7 @@ async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
 
 pub(crate) async fn upload_file_or_upload_chunk_longpath(
     req: web::HttpRequest,
-    body: web::types::Payload,
+    mut body: web::types::Payload,
     Query(query): Query<UploadFileOrChunkQuery>,
 ) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
@@ -659,7 +661,7 @@ pub(crate) async fn upload_file_or_upload_chunk_longpath(
     match (query.upload_id, query.part_number) {
         (Some(upload_id), Some(part_number)) => {
             println!("long path");
-            upload_chunk(&bucket_name, &object_key, &part_number, &upload_id, body).await
+            upload_chunk(&bucket_name, &object_key, &part_number, &upload_id, &mut body).await
         }
         _ => {
             if let Some(copy_source) = req.headers().get("x-amz-copy-source") {
@@ -670,7 +672,7 @@ pub(crate) async fn upload_file_or_upload_chunk_longpath(
                 )
                 .await
             } else {
-                upload_file(file_path, body).await
+                upload_file(file_path, &mut body).await
             }
         }
     }
