@@ -108,7 +108,7 @@ pub struct UploadFileResp {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BucketWrapper {
     #[serde(rename = "Bucket")]
-    pub bucket: Bucket,
+    pub bucket: Vec<Bucket>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -124,5 +124,5 @@ pub struct ListBucketResp {
     #[serde(rename = "Owner")]
     pub owner: Owner,
     #[serde(rename = "Buckets")]
-    pub buckets: Vec<BucketWrapper>,
+    pub buckets: BucketWrapper,
 }

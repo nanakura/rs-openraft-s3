@@ -2,10 +2,7 @@ use crate::pkg::err::AppError;
 use crate::pkg::err::AppError::{Anyhow, BadRequest};
 use crate::pkg::fs;
 use crate::pkg::fs::{save_file, save_metadata, sum_15bit_sha256, Metadata, UncompressStream};
-use crate::pkg::model::{
-    Bucket, BucketWrapper, CompleteMultipartUpload, CompleteMultipartUploadResult, Content,
-    HeadNotFoundResp, InitiateMultipartUploadResult, ListBucketResp, ListBucketResult, Owner,
-};
+use crate::pkg::model::{Bucket, BucketWrapper, CompleteMultipartUpload, CompleteMultipartUploadResult, Content, HeadNotFoundResp, InitiateMultipartUploadResult, ListBucketResp, ListBucketResult, Owner};
 use crate::pkg::util::cry;
 use crate::pkg::util::date::date_format_to_second;
 use anyhow::{anyhow, Context};
@@ -61,15 +58,16 @@ pub(crate) async fn list_bucket() -> HandlerResponse {
         }
         let mut buckets = Vec::new();
         for bucket in res {
-            let bucket_wrapper = BucketWrapper { bucket };
-            buckets.push(bucket_wrapper);
+            buckets.push(bucket);
         }
         let list_res = ListBucketResp {
             id: "20230529".to_string(),
             owner: Owner {
                 display_name: "minioadmin".to_string(),
             },
-            buckets,
+            buckets: BucketWrapper{
+                bucket: buckets
+            },
         };
         let xml = to_string(&list_res).context("序列化失败")?;
         Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
@@ -81,7 +79,9 @@ pub(crate) async fn list_bucket() -> HandlerResponse {
             owner: Owner {
                 display_name: "minioadmin".to_string(),
             },
-            buckets,
+            buckets: BucketWrapper{
+                bucket: buckets
+            },
         };
         let xml = to_string(&list_res).context("序列化失败")?;
         Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
@@ -95,18 +95,18 @@ mod test {
     #[test]
     fn test1() {
         let mut buckets = Vec::new();
-        buckets.push(BucketWrapper {
-            bucket: Bucket {
+        buckets.push(Bucket {
                 name: "xx".to_string(),
                 creation_date: "111".to_string(),
-            },
-        });
+            });
         let list_res = ListBucketResp {
             id: "20230529".to_string(),
             owner: Owner {
                 display_name: "minioadmin".to_string(),
             },
-            buckets,
+            buckets: BucketWrapper{
+                bucket: buckets
+            },
         };
         let xml = to_string(&list_res);
         assert!(xml.is_ok(), "序列化错误");
@@ -640,7 +640,7 @@ async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
     }
     let metainfo = fs::load_metadata(&metainfo_file_path)?;
 
-    let body = once(ok::<_, web::Error>(Bytes::from_static(b"")));
+    let body = once(ok::<_, web::Error>(Bytes::new()));
     let last_modified = date_format_to_second(metainfo.time);
     Ok(web::HttpResponse::Ok()
         .content_type(metainfo.file_type)
