@@ -23,6 +23,7 @@ use rayon::prelude::*;
 use serde::Deserialize;
 use std::fs::read_dir;
 use std::path::{Path, PathBuf};
+use ntex::rt::{spawn};
 use uuid::Uuid;
 use zstd::zstd_safe::WriteBuf;
 
@@ -509,15 +510,28 @@ pub(crate) async fn upload_chunk(
         let item = item.map_err(|err| anyhow!(err.to_string()))?;
         bytes.extend_from_slice(&item);
     }
-    let len = bytes.len();
-    let part_path = PathBuf::from(DATA_DIR)
-        .join("tmp")
-        .join(upload_id)
-        .join(part_number);
-    tokio::fs::write(part_path, format!("{}", len)).await.context("保存文件大小失败")?;
     let hash = fs::sum_15bit_sha256(&bytes).await;
-    let body = fs::compress_chunk(&bytes).await?;
-    fs::save_file(&hash, &body).await?;
+    let hash_clone = hash.clone();
+    let pn = part_number.to_string();
+    let uid = upload_id.to_string();
+    spawn(async move {
+        let len = bytes.len();
+        let part_path = PathBuf::from(DATA_DIR)
+            .join("tmp")
+            .join(uid)
+            .join(pn);
+        if let Err(err) = tokio::fs::write(part_path, format!("{}", len)).await {
+            println!("写入分片大小失败，err:{}", err);
+        }
+        match fs::compress_chunk(&bytes).await {
+            Ok(body) => {
+                if let Err(e) = fs::save_file(&hash_clone, &body).await {
+                    println!("写入分片失败，err:{}", e);
+                }
+            },
+            Err(err) => println!("压缩分片失败，err: {}", err)
+        }
+    });
     // let part_etag = PartETag {
     //     part_number: part_number.to_string().parse().context("parse partNumber failed")?,
     //     etag:hash,
