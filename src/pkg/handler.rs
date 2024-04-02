@@ -23,7 +23,6 @@ use rayon::prelude::*;
 use serde::Deserialize;
 use std::fs::read_dir;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
 use uuid::Uuid;
 use zstd::zstd_safe::WriteBuf;
 
@@ -505,12 +504,12 @@ pub(crate) async fn upload_chunk(
     body: &mut web::types::Payload,
 ) -> HandlerResponse {
     let mut bytes = Vec::new();
-    bytes.reserve(8<<20);
+    bytes.reserve_exact(8<<20);
     while let Some(item) = body.next().await {
         let item = item.map_err(|err| anyhow!(err.to_string()))?;
         bytes.extend_from_slice(&item);
     }
-    let len = bytes.len();;
+    let len = bytes.len();
     let part_path = PathBuf::from(DATA_DIR)
         .join("tmp")
         .join(upload_id)
