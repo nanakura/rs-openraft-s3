@@ -1,8 +1,9 @@
 #![feature(fn_traits, unboxed_closures)]
 #[global_allocator]
-static ALLOC: snmalloc_rs::SnMalloc = snmalloc_rs::SnMalloc;
+static ALLOC: MiMalloc = MiMalloc;
 mod pkg;
 
+use mimalloc::MiMalloc;
 use crate::pkg::handler::{
     create_bucket, delete_bucket, delete_file, delete_file_longpath, download_file,
     download_file_longpath, get_bucket, head_bucket, head_object, head_object_longpath,

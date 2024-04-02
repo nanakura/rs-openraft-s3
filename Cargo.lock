@@ -307,15 +307,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cmake"
-version = "0.1.50"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a31c789563b815f77f4250caee12365734369f942439b7defd71e18a48197130"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "colorchoice"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -834,6 +825,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c198f91728a82281a64e1f4f9eeb25d82cb32a5de251c6bd1b5154d63a8e7bd"
 
 [[package]]
+name = "libmimalloc-sys"
+version = "0.1.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3979b5c37ece694f1f5e51e7ecc871fdb0f517ed04ee45f88d15d6d553cb9664"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -883,6 +884,15 @@ name = "memchr"
 version = "2.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c8640c5d730cb13ebd907d8d04b52f55ac9a2eec55b440c8892f40d56c76c1d"
+
+[[package]]
+name = "mimalloc"
+version = "0.1.39"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa01922b5ea280a911e323e4d2fd24b7fe5cc4042e0d2cda3c40775cdc4bdc9c"
+dependencies = [
+ "libmimalloc-sys",
+]
 
 [[package]]
 name = "mime"
@@ -1597,6 +1607,7 @@ dependencies = [
  "hex 0.4.3",
  "hmac",
  "log",
+ "mimalloc",
  "mime_guess",
  "ntex",
  "ntex-cors",
@@ -1608,7 +1619,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "snmalloc-rs",
  "thiserror",
  "tokio",
  "url",
@@ -1793,24 +1803,6 @@ name = "smallvec"
 version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
-
-[[package]]
-name = "snmalloc-rs"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc157dd2183548a4b4b0b428d59efbb527b19360a678b632842fe3fcfb2c30f9"
-dependencies = [
- "snmalloc-sys",
-]
-
-[[package]]
-name = "snmalloc-sys"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0761b83013b42a16bab6c3bd5a68e80b1a54f7af9e68e40f00e017489821e8fa"
-dependencies = [
- "cmake",
-]
 
 [[package]]
 name = "socket2"
