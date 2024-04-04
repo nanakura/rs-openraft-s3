@@ -8,10 +8,9 @@ use rkyv::{Archive, Deserialize, Infallible, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::fs::File;
-use std::io::{self, BufReader, Read, Write};
+use std::io::{self, BufReader, Cursor, Read};
 use std::path::{Path, PathBuf};
 use zstd::stream::read::Decoder;
-use zstd::stream::write::Encoder;
 
 #[derive(Archive, Deserialize, Serialize, Debug, PartialEq)]
 #[archive(compare(PartialEq), check_bytes)]
@@ -37,13 +36,12 @@ pub(crate) fn path_from_hash(hash: &str) -> PathBuf {
         .join(hash_suffix)
 }
 
-pub(crate) async fn save_file(hash_code: &str, data: &[u8]) -> anyhow::Result<()> {
+pub(crate) fn save_file(hash_code: &str, mut reader: impl std::io::Read) -> anyhow::Result<()> {
     let file_path = path_from_hash(hash_code);
-
     fs::create_dir_all(file_path.parent().unwrap())?;
-
-    tokio::fs::write(file_path, data).await?;
-
+    //tokio::fs::write(file_path, data).await?;
+    let mut file = std::fs::File::create(file_path)?;
+    std::io::copy(&mut reader, &mut file)?;
     Ok(())
 }
 
@@ -64,11 +62,13 @@ pub(crate) async fn sum_15bit_sha256(data: &[u8]) -> String {
     get_sha256_string(&sha256)
 }
 
-pub(crate) async fn compress_chunk(chunk: &[u8]) -> anyhow::Result<Vec<u8>> {
-    let mut encoder = Encoder::new(Vec::new(), 0)?;
-    encoder.write_all(chunk)?;
-    let result = encoder.finish()?;
-    Ok(result)
+pub(crate) fn compress_chunk(mut reader: impl std::io::Read) -> anyhow::Result<impl std::io::Read> {
+    //let mut encoder = Encoder::new(Vec::new(), 0)?;
+    let mut res = Vec::new();
+    //std::io::copy(&mut reader, &mut encoder)?;
+    zstd::stream::copy_encode(&mut reader, &mut res, 0)?;
+    //let result = encoder.finish()?;
+    Ok(Cursor::new(res))
 }
 
 fn decompress_chunk(chunk_path: &str) -> anyhow::Result<Vec<u8>> {
@@ -171,8 +171,8 @@ pub(crate) async fn split_file(
             chunks.push(hash_code.clone());
 
             if !is_path_exist(&hash_code) {
-                let compressed_chunk = compress_chunk(chunk).await?;
-                save_file(&hash_code, &compressed_chunk).await?;
+                let compressed_chunk = compress_chunk(std::io::Cursor::new(chunk))?;
+                save_file(&hash_code, compressed_chunk)?;
             }
         }
 
@@ -204,4 +204,7 @@ mod test {
         let res: Metadata = archived.deserialize(&mut Infallible).unwrap();
         assert_eq!(m, res)
     }
+
+    #[test]
+    fn test2() {}
 }

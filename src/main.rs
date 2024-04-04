@@ -3,7 +3,6 @@
 static ALLOC: MiMalloc = MiMalloc;
 mod pkg;
 
-use mimalloc::MiMalloc;
 use crate::pkg::handler::{
     create_bucket, delete_bucket, delete_file, delete_file_longpath, download_file,
     download_file_longpath, get_bucket, head_bucket, head_object, head_object_longpath,
@@ -11,6 +10,7 @@ use crate::pkg::handler::{
     upload_file_or_upload_chunk, upload_file_or_upload_chunk_longpath,
 };
 use crate::pkg::middleware::CredentialsV4;
+use mimalloc::MiMalloc;
 use ntex::web;
 use ntex::web::middleware;
 use ntex_cors::Cors;

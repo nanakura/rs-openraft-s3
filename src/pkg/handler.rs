@@ -2,15 +2,19 @@ use crate::pkg::err::AppError;
 use crate::pkg::err::AppError::{Anyhow, BadRequest};
 use crate::pkg::fs;
 use crate::pkg::fs::{save_file, save_metadata, sum_15bit_sha256, Metadata, UncompressStream};
-use crate::pkg::model::{Bucket, BucketWrapper, CompleteMultipartUpload, CompleteMultipartUploadResult, Content, HeadNotFoundResp, InitiateMultipartUploadResult, ListBucketResp, ListBucketResult, Owner};
+use crate::pkg::model::{
+    Bucket, BucketWrapper, CompleteMultipartUpload, CompleteMultipartUploadResult, Content,
+    HeadNotFoundResp, InitiateMultipartUploadResult, ListBucketResp, ListBucketResult, Owner,
+};
 use crate::pkg::util::cry;
 use crate::pkg::util::date::date_format_to_second;
 use anyhow::{anyhow, Context};
 use chrono::Utc;
 use futures::future::ok;
 use futures::stream::once;
-use futures::{StreamExt};
+use futures::StreamExt;
 use mime_guess::MimeGuess;
+use ntex::rt::spawn;
 use ntex::util::{Bytes, BytesMut, Stream};
 use ntex::web;
 use ntex::web::types::Query;
@@ -20,7 +24,6 @@ use rayon::prelude::*;
 use serde::Deserialize;
 use std::fs::read_dir;
 use std::path::{Path, PathBuf};
-use ntex::rt::{spawn};
 use uuid::Uuid;
 use zstd::zstd_safe::WriteBuf;
 
@@ -65,9 +68,7 @@ pub(crate) async fn list_bucket() -> HandlerResponse {
             owner: Owner {
                 display_name: "minioadmin".to_string(),
             },
-            buckets: BucketWrapper{
-                bucket: buckets
-            },
+            buckets: BucketWrapper { bucket: buckets },
         };
         let xml = to_string(&list_res).context("序列化失败")?;
         Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
@@ -79,9 +80,7 @@ pub(crate) async fn list_bucket() -> HandlerResponse {
             owner: Owner {
                 display_name: "minioadmin".to_string(),
             },
-            buckets: BucketWrapper{
-                bucket: buckets
-            },
+            buckets: BucketWrapper { bucket: buckets },
         };
         let xml = to_string(&list_res).context("序列化失败")?;
         Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
@@ -96,17 +95,15 @@ mod test {
     fn test1() {
         let mut buckets = Vec::new();
         buckets.push(Bucket {
-                name: "xx".to_string(),
-                creation_date: "111".to_string(),
-            });
+            name: "xx".to_string(),
+            creation_date: "111".to_string(),
+        });
         let list_res = ListBucketResp {
             id: "20230529".to_string(),
             owner: Owner {
                 display_name: "minioadmin".to_string(),
             },
-            buckets: BucketWrapper{
-                bucket: buckets
-            },
+            buckets: BucketWrapper { bucket: buckets },
         };
         let xml = to_string(&list_res);
         assert!(xml.is_ok(), "序列化错误");
@@ -505,7 +502,7 @@ pub(crate) async fn upload_chunk(
     mut body: web::types::Payload,
 ) -> HandlerResponse {
     let mut bytes = Vec::new();
-    bytes.reserve_exact(8<<20);
+    bytes.reserve_exact(8 << 20);
     while let Some(item) = body.next().await {
         let item = item.map_err(|err| anyhow!(err.to_string()))?;
         bytes.extend_from_slice(&item);
@@ -516,20 +513,17 @@ pub(crate) async fn upload_chunk(
     let uid = upload_id.to_string();
     spawn(async move {
         let len = bytes.len();
-        let part_path = PathBuf::from(DATA_DIR)
-            .join("tmp")
-            .join(uid)
-            .join(pn);
+        let part_path = PathBuf::from(DATA_DIR).join("tmp").join(uid).join(pn);
         if let Err(err) = tokio::fs::write(part_path, format!("{}", len)).await {
             println!("写入分片大小失败，err:{}", err);
         }
-        match fs::compress_chunk(&bytes).await {
+        match fs::compress_chunk(std::io::Cursor::new(&bytes)) {
             Ok(body) => {
-                if let Err(e) = fs::save_file(&hash_clone, &body).await {
+                if let Err(e) = fs::save_file(&hash_clone, body) {
                     println!("写入分片失败，err:{}", e);
                 }
-            },
-            Err(err) => println!("压缩分片失败，err: {}", err)
+            }
+            Err(err) => println!("压缩分片失败，err: {}", err),
         }
     });
     // let part_etag = PartETag {
@@ -577,7 +571,7 @@ async fn upload_file(file_path: PathBuf, body: &mut web::types::Payload) -> Hand
         (sz, None) => sz,
     };
     let mut bytes = BytesMut::new();
-    bytes.reserve(8<<20);
+    bytes.reserve(8 << 20);
     while let Some(item) = body.next().await {
         let item = item.map_err(|err| anyhow!(err.to_string()))?;
         bytes.extend_from_slice(&item);
@@ -595,8 +589,8 @@ async fn upload_file(file_path: PathBuf, body: &mut web::types::Payload) -> Hand
         }
         hashcodes.push(sha.clone());
         if !fs::is_path_exist(&sha) {
-            let compressed_chunk = fs::compress_chunk(chunk).await?;
-            save_file(&sha, &compressed_chunk).await?;
+            let compressed_chunk = fs::compress_chunk(std::io::Cursor::new(chunk))?;
+            save_file(&sha, compressed_chunk)?;
         }
     }
     // test pass println!("size:{}", file_size);
