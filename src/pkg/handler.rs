@@ -511,25 +511,11 @@ pub(crate) async fn upload_chunk(
     let hash_clone = hash.clone();
     let pn = part_number.to_string();
     let uid = upload_id.to_string();
-    spawn(async move {
-        let len = bytes.len();
-        let part_path = PathBuf::from(DATA_DIR).join("tmp").join(uid).join(pn);
-        if let Err(err) = tokio::fs::write(part_path, format!("{}", len)).await {
-            println!("写入分片大小失败，err:{}", err);
-        }
-        match fs::compress_chunk(std::io::Cursor::new(&bytes)) {
-            Ok(body) => {
-                if let Err(e) = fs::save_file(&hash_clone, body) {
-                    println!("写入分片失败，err:{}", e);
-                }
-            }
-            Err(err) => println!("压缩分片失败，err: {}", err),
-        }
-    });
-    // let part_etag = PartETag {
-    //     part_number: part_number.to_string().parse().context("parse partNumber failed")?,
-    //     etag:hash,
-    // };
+    let len = bytes.len();
+    let part_path = PathBuf::from(DATA_DIR).join("tmp").join(uid).join(pn);
+    tokio::fs::write(part_path, format!("{}", len)).await.map_err(|err| anyhow!(err.to_string()))?;
+    let body = fs::compress_chunk(std::io::Cursor::new(&bytes))?;
+    fs::save_file(&hash_clone, body)?;
     Ok(HttpResponse::Ok().header("ETag", hash).finish())
 }
 
@@ -593,7 +579,6 @@ async fn upload_file(file_path: PathBuf, body: &mut web::types::Payload) -> Hand
             save_file(&sha, compressed_chunk)?;
         }
     }
-    // test pass println!("size:{}", file_size);
     let metainfo = Metadata {
         name: file_name,
         size: file_size as u64,
