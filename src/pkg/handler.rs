@@ -9,7 +9,7 @@ use anyhow::{anyhow, Context};
 use chrono::Utc;
 use futures::future::ok;
 use futures::stream::once;
-use futures::StreamExt;
+use futures::{StreamExt};
 use mime_guess::MimeGuess;
 use ntex::util::{Bytes, BytesMut, Stream};
 use ntex::web;
@@ -444,7 +444,7 @@ pub(crate) async fn upload_file_or_upload_chunk(
         .join(&object_name);
     match (query.upload_id, query.part_number) {
         (Some(upload_id), Some(part_number)) => {
-            upload_chunk(&bucket_name, &object_name, &part_number, &upload_id, &mut body).await
+            upload_chunk(&bucket_name, &object_name, &part_number, &upload_id, body).await
         }
         _ => {
             if let Some(copy_source) = req.headers().get("x-amz-copy-source") {
@@ -502,7 +502,7 @@ pub(crate) async fn upload_chunk(
     _object_key: &str,
     part_number: &str,
     upload_id: &str,
-    body: &mut web::types::Payload,
+    mut body: web::types::Payload,
 ) -> HandlerResponse {
     let mut bytes = Vec::new();
     bytes.reserve_exact(8<<20);
@@ -674,7 +674,7 @@ pub(crate) async fn upload_file_or_upload_chunk_longpath(
     match (query.upload_id, query.part_number) {
         (Some(upload_id), Some(part_number)) => {
             println!("long path");
-            upload_chunk(&bucket_name, &object_key, &part_number, &upload_id, &mut body).await
+            upload_chunk(&bucket_name, &object_key, &part_number, &upload_id, body).await
         }
         _ => {
             if let Some(copy_source) = req.headers().get("x-amz-copy-source") {

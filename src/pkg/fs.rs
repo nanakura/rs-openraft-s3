@@ -71,7 +71,6 @@ pub(crate) async fn compress_chunk(chunk: &[u8]) -> anyhow::Result<Vec<u8>> {
     Ok(result)
 }
 
-#[allow(dead_code)]
 fn decompress_chunk(chunk_path: &str) -> anyhow::Result<Vec<u8>> {
     let chunk_file = fs::read(chunk_path)?;
     let mut decoder = Decoder::new(chunk_file.as_slice())?;
