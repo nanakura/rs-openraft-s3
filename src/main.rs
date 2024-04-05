@@ -23,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
         web::App::new()
             .wrap(cors)
             .wrap(middleware::Logger::default())
-            .wrap(CredentialsV4)
+            // .wrap(CredentialsV4)
             .route("/", web::get().to(list_bucket))
             .route("/{bucket}/", web::get().to(get_bucket))
             .route("/{bucket}/", web::head().to(head_bucket))

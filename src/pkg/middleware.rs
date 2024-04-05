@@ -177,6 +177,7 @@ fn valid_authorization_header(
     Ok(signature == str_hex_signature)
 }
 
+// TODO FIX: input has valid character
 fn valid_authorization_url(
     request: &web::WebRequest<impl web::ErrorRenderer>,
     access_key_id: &str,
