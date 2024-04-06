@@ -14,7 +14,6 @@ use futures::future::ok;
 use futures::stream::once;
 use futures::StreamExt;
 use mime_guess::MimeGuess;
-use ntex::rt::spawn;
 use ntex::util::{Bytes, BytesMut, Stream};
 use ntex::web;
 use ntex::web::types::Query;
@@ -508,11 +507,15 @@ pub(crate) async fn upload_chunk(
         bytes.extend_from_slice(&item);
     }
     let hash = fs::sum_15bit_sha256(&bytes).await;
+    let path = fs::path_from_hash(&hash);
+    if fs::is_path_exist(&path.to_string_lossy().to_string()) {
+       return Ok(HttpResponse::Ok().header("ETag", hash).finish());
+    }
     let hash_clone = hash.clone();
-    let pn = part_number.to_string();
-    let uid = upload_id.to_string();
     let len = bytes.len();
-    let part_path = PathBuf::from(DATA_DIR).join("tmp").join(uid).join(pn);
+    let file_size_dir = PathBuf::from(DATA_DIR).join("tmp").join(upload_id);
+    let part_path = PathBuf::from(DATA_DIR).join("tmp").join(upload_id).join(part_number);
+    std::fs::create_dir_all(file_size_dir).map_err(|err| anyhow!(err))?;
     tokio::fs::write(part_path, format!("{}", len)).await.map_err(|err| anyhow!(err.to_string()))?;
     let body = fs::compress_chunk(std::io::Cursor::new(&bytes))?;
     fs::save_file(&hash_clone, body)?;
