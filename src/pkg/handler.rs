@@ -268,19 +268,20 @@ pub(crate) async fn init_chunk_or_combine_chunk_longpath(
     let object_name: String = get_path_param(&req, "object")?;
     let object_suffix: String = get_path_param(&req, "objectSuffix")?;
     if let Some(upload_id) = query.upload_id {
+        println!("uploadId: {}", upload_id);
         let mut bytes = BytesMut::new();
         while let Some(item) = body.next().await {
             let item = item.context("")?;
             bytes.extend_from_slice(&item);
         }
+        let body = std::str::from_utf8(bytes.as_slice()).map_err(|err| anyhow!(err))?;
+
+        let cmu: CompleteMultipartUpload =
+            quick_xml::de::from_str(body).map_err(|err| anyhow!(err))?;
         let object_key = PathBuf::from(&object_name)
             .join(&object_suffix)
             .to_string_lossy()
             .to_string();
-        let cmu: CompleteMultipartUpload = quick_xml::de::from_str(
-            std::str::from_utf8(bytes.as_slice()).map_err(|err| anyhow!(err))?,
-        )
-        .map_err(|err| anyhow!(err))?;
         combine_chunk(&bucket_name, &object_key, &upload_id, cmu).await
     } else {
         init_chunk(
@@ -509,17 +510,15 @@ pub(crate) async fn upload_chunk(
     let hash = fs::sum_15bit_sha256(&bytes).await;
     let path = fs::path_from_hash(&hash);
     if fs::is_path_exist(&path.to_string_lossy().to_string()) {
-       return Ok(HttpResponse::Ok().header("ETag", hash).finish());
+       return Ok(HttpResponse::Ok().header("ETag", &hash).body(&hash));
     }
     let hash_clone = hash.clone();
     let len = bytes.len();
-    let file_size_dir = PathBuf::from(DATA_DIR).join("tmp").join(upload_id);
     let part_path = PathBuf::from(DATA_DIR).join("tmp").join(upload_id).join(part_number);
-    std::fs::create_dir_all(file_size_dir).map_err(|err| anyhow!(err))?;
     tokio::fs::write(part_path, format!("{}", len)).await.map_err(|err| anyhow!(err.to_string()))?;
     let body = fs::compress_chunk(std::io::Cursor::new(&bytes))?;
     fs::save_file(&hash_clone, body)?;
-    Ok(HttpResponse::Ok().header("ETag", hash).finish())
+    Ok(HttpResponse::Ok().header("ETag", &hash).body(&hash))
 }
 
 pub(crate) async fn delete_file(req: web::HttpRequest) -> HandlerResponse {

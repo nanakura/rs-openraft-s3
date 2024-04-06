@@ -1,6 +1,6 @@
 use crate::pkg::util::cry::{do_bytes_to_hex, do_hex, do_hmac_sha256};
 use anyhow::Context;
-use chrono::{DateTime, Utc};
+use chrono::{NaiveDateTime, Utc};
 use ntex::service::{Middleware, Service, ServiceCtx};
 use ntex::web;
 use ntex::web::HttpResponse;
@@ -231,7 +231,8 @@ fn valid_authorization_url(
         .find(|(key, _)| key == "X-Amz-Expires")
         .and_then(|(_, value)| value.parse::<i64>().ok())
         .context("X-Amz-Expires不存在")?;
-    let request_date_time = DateTime::parse_from_rfc3339(&request_date)?;
+    let fmt = "%Y%m%dT%H%M%SZ";
+    let request_date_time = NaiveDateTime::parse_from_str(&request_date, fmt).context("解析日期错误")?.and_utc();
     let end_date = request_date_time + chrono::Duration::seconds(expires);
     if end_date < Utc::now() {
         return Ok(false);
@@ -282,7 +283,6 @@ fn valid_authorization_url(
 
         string_to_sign
     };
-
     let k_secret = format!("AWS4{}", secret_access_key);
     let k_secret = k_secret.as_bytes();
     let k_date = do_hmac_sha256(k_secret, date)?;

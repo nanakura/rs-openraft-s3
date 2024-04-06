@@ -11,7 +11,7 @@ use crate::pkg::handler::{
 };
 use crate::pkg::middleware::CredentialsV4;
 use mimalloc::MiMalloc;
-use ntex::web;
+use ntex::{web};
 use ntex::web::middleware;
 use ntex_cors::Cors;
 
@@ -19,11 +19,10 @@ use ntex_cors::Cors;
 async fn main() -> anyhow::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
     web::HttpServer::new(move || {
-        let cors = Cors::default();
         web::App::new()
-            .wrap(cors)
+            .wrap(Cors::default())
+            .wrap(CredentialsV4)
             .wrap(middleware::Logger::default())
-            // .wrap(CredentialsV4)
             .route("/", web::get().to(list_bucket))
             .route("/{bucket}", web::get().to(get_bucket))
             .route("/{bucket}", web::head().to(head_bucket))
