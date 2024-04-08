@@ -15,7 +15,7 @@ use futures::stream::once;
 use futures::StreamExt;
 use mime_guess::MimeGuess;
 use ntex::rt::spawn;
-use ntex::util::{Bytes, BytesMut, Stream};
+use ntex::util::{Bytes, BytesMut};
 use ntex::web;
 use ntex::web::types::Query;
 use ntex::web::HttpResponse;
@@ -560,10 +560,7 @@ async fn upload_file(file_path: PathBuf, body: &mut web::types::Payload) -> Hand
     let file_type = MimeGuess::from_path(Path::new(&tmp_filename))
         .first_or_text_plain()
         .to_string();
-    let mut file_size = match body.size_hint() {
-        (_, Some(sz)) => sz,
-        (sz, None) => sz,
-    };
+    let mut file_size = 0;
     let mut bytes = BytesMut::new();
     bytes.reserve(8 << 20);
     while let Some(item) = body.next().await {
@@ -572,16 +569,10 @@ async fn upload_file(file_path: PathBuf, body: &mut web::types::Payload) -> Hand
     }
     let chunks = bytes.chunks(8 << 20);
     let mut hashcodes: Vec<String> = Vec::new();
-    let mut sz_flag = false;
     let chunks: Vec<Vec<u8>> = chunks.map(|it| it.to_vec()).collect();
     for chunk in chunks {
+        file_size += chunk.len();
         let sha = sum_15bit_sha256(&chunk).await;
-        if file_size == 0 || sz_flag {
-            if !sz_flag {
-                sz_flag = true;
-            }
-            file_size += chunk.len();
-        }
         hashcodes.push(sha.clone());
         spawn(async move {
             if !fs::is_path_exist(&sha) {
