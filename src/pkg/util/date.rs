@@ -18,8 +18,8 @@ pub fn date_format_to_second(date: DateTime<Utc>) -> String {
 
 #[cfg(test)]
 mod test {
-    use chrono::NaiveDateTime;
     use super::*;
+    use chrono::NaiveDateTime;
 
     #[test]
     fn test1() {
@@ -33,7 +33,6 @@ mod test {
     #[test]
     fn test2() {
         let date = "20240406T070323Z";
-        let now: DateTime<Utc> = Utc::now();
         let fmt = "%Y%m%dT%H%M%SZ";
         let x = NaiveDateTime::parse_from_str(date, fmt).unwrap();
         let x = x.and_utc();

@@ -14,6 +14,7 @@ use futures::future::ok;
 use futures::stream::once;
 use futures::StreamExt;
 use mime_guess::MimeGuess;
+use ntex::rt::spawn;
 use ntex::util::{Bytes, BytesMut, Stream};
 use ntex::web;
 use ntex::web::types::Query;
@@ -510,12 +511,17 @@ pub(crate) async fn upload_chunk(
     let hash = fs::sum_15bit_sha256(&bytes).await;
     let path = fs::path_from_hash(&hash);
     if fs::is_path_exist(&path.to_string_lossy().to_string()) {
-       return Ok(HttpResponse::Ok().header("ETag", &hash).body(&hash));
+        return Ok(HttpResponse::Ok().header("ETag", &hash).body(&hash));
     }
     let hash_clone = hash.clone();
     let len = bytes.len();
-    let part_path = PathBuf::from(DATA_DIR).join("tmp").join(upload_id).join(part_number);
-    tokio::fs::write(part_path, format!("{}", len)).await.map_err(|err| anyhow!(err.to_string()))?;
+    let part_path = PathBuf::from(DATA_DIR)
+        .join("tmp")
+        .join(upload_id)
+        .join(part_number);
+    tokio::fs::write(part_path, format!("{}", len))
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?;
     let body = fs::compress_chunk(std::io::Cursor::new(&bytes))?;
     fs::save_file(&hash_clone, body)?;
     Ok(HttpResponse::Ok().header("ETag", &hash).body(&hash))
@@ -567,8 +573,9 @@ async fn upload_file(file_path: PathBuf, body: &mut web::types::Payload) -> Hand
     let chunks = bytes.chunks(8 << 20);
     let mut hashcodes: Vec<String> = Vec::new();
     let mut sz_flag = false;
+    let chunks: Vec<Vec<u8>> = chunks.map(|it| it.to_vec()).collect();
     for chunk in chunks {
-        let sha = sum_15bit_sha256(chunk).await;
+        let sha = sum_15bit_sha256(&chunk).await;
         if file_size == 0 || sz_flag {
             if !sz_flag {
                 sz_flag = true;
@@ -576,10 +583,15 @@ async fn upload_file(file_path: PathBuf, body: &mut web::types::Payload) -> Hand
             file_size += chunk.len();
         }
         hashcodes.push(sha.clone());
-        if !fs::is_path_exist(&sha) {
-            let compressed_chunk = fs::compress_chunk(std::io::Cursor::new(chunk))?;
-            save_file(&sha, compressed_chunk)?;
-        }
+        spawn(async move {
+            if !fs::is_path_exist(&sha) {
+                let compressed_chunk = fs::compress_chunk(std::io::Cursor::new(chunk))?;
+                save_file(&sha, compressed_chunk)?;
+            }
+            Ok::<(), anyhow::Error>(())
+        })
+        .await
+        .context("spawn异常")??;
     }
     let metainfo = Metadata {
         name: file_name,

@@ -232,7 +232,9 @@ fn valid_authorization_url(
         .and_then(|(_, value)| value.parse::<i64>().ok())
         .context("X-Amz-Expires不存在")?;
     let fmt = "%Y%m%dT%H%M%SZ";
-    let request_date_time = NaiveDateTime::parse_from_str(&request_date, fmt).context("解析日期错误")?.and_utc();
+    let request_date_time = NaiveDateTime::parse_from_str(&request_date, fmt)
+        .context("解析日期错误")?
+        .and_utc();
     let end_date = request_date_time + chrono::Duration::seconds(expires);
     if end_date < Utc::now() {
         return Ok(false);

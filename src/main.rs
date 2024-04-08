@@ -11,7 +11,7 @@ use crate::pkg::handler::{
 };
 use crate::pkg::middleware::CredentialsV4;
 use mimalloc::MiMalloc;
-use ntex::{web};
+use ntex::web;
 use ntex::web::middleware;
 use ntex_cors::Cors;
 
