@@ -54,7 +54,8 @@ fn get_sha256(data: &[u8]) -> Vec<u8> {
 
 fn get_sha256_string(hash: &[u8]) -> String {
     let hash_string: String = hash.encode_hex();
-    hash_string[..15].to_uppercase()
+    //hash_string[..15].to_uppercase()
+    hash_string.to_uppercase()
 }
 
 pub(crate) async fn sum_15bit_sha256(data: &[u8]) -> String {

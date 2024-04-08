@@ -31,9 +31,7 @@ impl AsyncRead for PayloadAsyncReader {
         if this.buffer.is_empty() {
             match futures::ready!(Pin::new(&mut this.payload).poll_next(cx)) {
                 Some(Ok(data)) => {
-                    // let v = data.to_vec();
-                    // this.buffer.copy_from_slice(&v);
-                    this.buffer = data.to_vec();
+                    this.buffer.copy_from_slice(&data);
                 }
                 Some(Err(err)) => {
                     return std::task::Poll::Ready(Err(std::io::Error::new(ErrorKind::Other, err)))
@@ -60,9 +58,7 @@ impl futures::AsyncRead for PayloadAsyncReader {
         if this.buffer.is_empty() {
             match futures::ready!(Pin::new(&mut this.payload).poll_next(cx)) {
                 Some(Ok(data)) => {
-                    // let v = data.to_vec();
-                    // this.buffer.copy_from_slice(&v);
-                    this.buffer = data.to_vec();
+                    this.buffer.copy_from_slice(&data);
                 }
                 Some(Err(err)) => {
                     return std::task::Poll::Ready(Err(std::io::Error::new(ErrorKind::Other, err)))
