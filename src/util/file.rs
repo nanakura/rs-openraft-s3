@@ -1,4 +1,4 @@
-use crate::pkg::fs;
+use crate::fs;
 use std::path::Path;
 
 #[allow(dead_code)]

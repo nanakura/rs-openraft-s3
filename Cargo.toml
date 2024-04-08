@@ -4,6 +4,9 @@ name = "rs-s3-local"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "s3-server"
+
 [dependencies]
 ntex = { version = "1", features = ["tokio"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -26,7 +29,6 @@ quick-xml = { version = "0.31.0", features = ["serialize"] }
 mime_guess = "2.0.4"
 uuid = { version = "1.8.0", features = ["v4"] }
 crypto-hash = "0.3.4"
-overloadf = "0.1.8"
 hmac = "0.12.1"
 url = "2.5.0"
 rand = "0.9.0-alpha.1"

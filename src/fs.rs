@@ -1,4 +1,4 @@
-use crate::pkg::util::cry;
+use crate::util::cry;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use futures::Stream;
@@ -185,7 +185,7 @@ pub(crate) async fn split_file(
 
 #[cfg(test)]
 mod test {
-    use crate::pkg::fs::Metadata;
+    use crate::fs::Metadata;
     use rkyv::{Deserialize, Infallible};
 
     #[test]

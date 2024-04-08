@@ -1,15 +1,5 @@
 use chrono::{DateTime, Utc};
-use overloadf::*;
-use std::time::SystemTime;
 
-#[overload]
-pub fn date_format_to_second(date: SystemTime) -> String {
-    let date = DateTime::<Utc>::from(date);
-    let df = "%a, %-e %b %Y %H:%M:%S GMT";
-    let tag = date.format(df).to_string();
-    tag
-}
-#[overload]
 pub fn date_format_to_second(date: DateTime<Utc>) -> String {
     let df = "%a, %-e %b %Y %H:%M:%S GMT";
     let tag = date.format(df).to_string();
