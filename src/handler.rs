@@ -1,11 +1,12 @@
 use crate::err::AppError;
 use crate::err::AppError::{Anyhow, BadRequest};
 use crate::fs;
-use crate::fs::{save_file, save_metadata, sum_15bit_sha256, Metadata, UncompressStream};
+use crate::fs::{save_metadata, split_file_ann_save, Metadata, UncompressStream};
 use crate::model::{
     Bucket, BucketWrapper, CompleteMultipartUpload, CompleteMultipartUploadResult, Content,
     HeadNotFoundResp, InitiateMultipartUploadResult, ListBucketResp, ListBucketResult, Owner,
 };
+use crate::stream::PayloadAsyncReader;
 use crate::util::cry;
 use crate::util::date::date_format_to_second;
 use anyhow::{anyhow, Context};
@@ -14,7 +15,6 @@ use futures::future::ok;
 use futures::stream::once;
 use futures::StreamExt;
 use mime_guess::MimeGuess;
-use ntex::rt::spawn;
 use ntex::util::{Bytes, BytesMut};
 use ntex::web;
 use ntex::web::types::Query;
@@ -431,7 +431,7 @@ pub struct UploadFileOrChunkQuery {
 }
 pub async fn upload_file_or_upload_chunk(
     req: web::HttpRequest,
-    mut body: web::types::Payload,
+    body: web::types::Payload,
     Query(query): Query<UploadFileOrChunkQuery>,
 ) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
@@ -453,7 +453,7 @@ pub async fn upload_file_or_upload_chunk(
                 )
                 .await
             } else {
-                upload_file(file_path, &mut body).await
+                upload_file(file_path, body).await
             }
         }
     }
@@ -508,7 +508,7 @@ pub(crate) async fn upload_chunk(
         let item = item.map_err(|err| anyhow!(err.to_string()))?;
         bytes.extend_from_slice(&item);
     }
-    let hash = fs::sum_15bit_sha256(&bytes).await;
+    let hash = fs::sum_sha256(&bytes).await;
     let path = fs::path_from_hash(&hash);
     if fs::is_path_exist(&path.to_string_lossy().to_string()) {
         return Ok(HttpResponse::Ok().header("ETag", &hash).body(&hash));
@@ -548,7 +548,7 @@ async fn do_delete_file(file_path: PathBuf) -> HandlerResponse {
         .content_type("application/xml")
         .finish())
 }
-async fn upload_file(file_path: PathBuf, body: &mut web::types::Payload) -> HandlerResponse {
+async fn upload_file(file_path: PathBuf, body: web::types::Payload) -> HandlerResponse {
     let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
     metainfo_file_path.push_str(".meta");
     let file_name = file_path
@@ -560,30 +560,9 @@ async fn upload_file(file_path: PathBuf, body: &mut web::types::Payload) -> Hand
     let file_type = MimeGuess::from_path(Path::new(&tmp_filename))
         .first_or_text_plain()
         .to_string();
-    let mut file_size = 0;
-    let mut bytes = BytesMut::new();
-    bytes.reserve(8 << 20);
-    while let Some(item) = body.next().await {
-        let item = item.map_err(|err| anyhow!(err.to_string()))?;
-        bytes.extend_from_slice(&item);
-    }
-    let chunks = bytes.chunks(8 << 20);
-    let mut hashcodes: Vec<String> = Vec::new();
-    let chunks: Vec<Vec<u8>> = chunks.map(|it| it.to_vec()).collect();
-    for chunk in chunks {
-        file_size += chunk.len();
-        let sha = sum_15bit_sha256(&chunk).await;
-        hashcodes.push(sha.clone());
-        spawn(async move {
-            if !fs::is_path_exist(&sha) {
-                let compressed_chunk = fs::compress_chunk(std::io::Cursor::new(chunk))?;
-                save_file(&sha, compressed_chunk)?;
-            }
-            Ok::<(), anyhow::Error>(())
-        })
-        .await
-        .context("spawn异常")??;
-    }
+
+    let reader = PayloadAsyncReader::new(body);
+    let (file_size, hashcodes) = split_file_ann_save(Box::new(reader), 8 << 20).await?;
     let metainfo = Metadata {
         name: file_name,
         size: file_size as u64,
@@ -640,7 +619,7 @@ async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
 
 pub async fn upload_file_or_upload_chunk_longpath(
     req: web::HttpRequest,
-    mut body: web::types::Payload,
+    body: web::types::Payload,
     Query(query): Query<UploadFileOrChunkQuery>,
 ) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
@@ -669,7 +648,7 @@ pub async fn upload_file_or_upload_chunk_longpath(
                 )
                 .await
             } else {
-                upload_file(file_path, &mut body).await
+                upload_file(file_path, body).await
             }
         }
     }

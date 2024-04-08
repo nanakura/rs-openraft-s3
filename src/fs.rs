@@ -3,14 +3,15 @@ use anyhow::Context;
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use hex::ToHex;
-use ntex::util::Bytes;
+use ntex::util::{Bytes, BytesMut};
 use rkyv::{Archive, Deserialize, Infallible, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::fs::File;
-use std::io::{self, BufReader, Cursor, Read};
+use std::io::{self, Cursor, Read};
 use std::path::{Path, PathBuf};
+use tokio::io::AsyncReadExt;
 use zstd::stream::read::Decoder;
+use zstd::zstd_safe::WriteBuf;
 
 #[derive(Archive, Deserialize, Serialize, Debug, PartialEq)]
 #[archive(compare(PartialEq), check_bytes)]
@@ -58,7 +59,7 @@ fn get_sha256_string(hash: &[u8]) -> String {
     hash_string.to_uppercase()
 }
 
-pub(crate) async fn sum_15bit_sha256(data: &[u8]) -> String {
+pub(crate) async fn sum_sha256(data: &[u8]) -> String {
     let sha256 = get_sha256(data);
     get_sha256_string(&sha256)
 }
@@ -156,32 +157,44 @@ pub(crate) fn is_path_exist(hash: &str) -> bool {
     path.exists()
 }
 
-#[allow(dead_code)]
-pub(crate) async fn split_file(
-    mut reader: BufReader<File>,
+pub(crate) async fn split_file_ann_save(
+    mut reader: Box<dyn tokio::io::AsyncRead + Unpin>,
     chunk_size: usize,
-) -> anyhow::Result<Vec<String>> {
+) -> anyhow::Result<(usize, Vec<String>)> {
     let mut chunks = Vec::new();
+    let mut size = 0;
+    let mut buffer = BytesMut::new();
     loop {
-        let mut buffer = vec![0; chunk_size];
-        let read = reader.read(&mut buffer)?;
-
+        let read = reader.read_buf(&mut buffer).await?;
         if read > 0 {
-            let chunk = &buffer[..read];
-            let hash_code = sum_15bit_sha256(chunk).await;
-            chunks.push(hash_code.clone());
+            size += read;
+            if buffer.len() >= chunk_size {
+                let chunk = buffer.split_to(chunk_size);
+                let hash_code = sum_sha256(chunk.as_slice()).await;
+                chunks.push(hash_code.clone());
 
-            if !is_path_exist(&hash_code) {
-                let compressed_chunk = compress_chunk(std::io::Cursor::new(chunk))?;
-                save_file(&hash_code, compressed_chunk)?;
+                if !is_path_exist(&hash_code) {
+                    let compressed_chunk = compress_chunk(std::io::Cursor::new(chunk)).unwrap();
+                    save_file(&hash_code, compressed_chunk).unwrap();
+                }
             }
         }
 
         if read == 0 {
+            if !buffer.is_empty() {
+                let chunk = buffer.as_slice();
+                let hash_code = sum_sha256(chunk).await;
+                chunks.push(hash_code.clone());
+
+                if !is_path_exist(&hash_code) {
+                    let compressed_chunk = compress_chunk(std::io::Cursor::new(chunk)).unwrap();
+                    save_file(&hash_code, compressed_chunk).unwrap();
+                }
+            }
             break;
         }
     }
-    Ok(chunks)
+    Ok((size, chunks))
 }
 
 #[cfg(test)]

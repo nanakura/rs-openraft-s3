@@ -31,7 +31,7 @@ impl AsyncRead for PayloadAsyncReader {
         if this.buffer.is_empty() {
             match futures::ready!(Pin::new(&mut this.payload).poll_next(cx)) {
                 Some(Ok(data)) => {
-                    this.buffer.copy_from_slice(&data);
+                    this.buffer = data.to_vec();
                 }
                 Some(Err(err)) => {
                     return std::task::Poll::Ready(Err(std::io::Error::new(ErrorKind::Other, err)))
@@ -40,7 +40,7 @@ impl AsyncRead for PayloadAsyncReader {
             }
         }
         // 将缓冲区中的数据写入到给定的缓冲区中
-        let bytes_to_copy = this.buffer.len();
+        let bytes_to_copy = std::cmp::min(buf.remaining(), this.buffer.len());
         buf.put_slice(&this.buffer[..bytes_to_copy]);
         // 从缓冲区中移除已复制的数据
         this.buffer.drain(..bytes_to_copy);
@@ -58,7 +58,7 @@ impl futures::AsyncRead for PayloadAsyncReader {
         if this.buffer.is_empty() {
             match futures::ready!(Pin::new(&mut this.payload).poll_next(cx)) {
                 Some(Ok(data)) => {
-                    this.buffer.copy_from_slice(&data);
+                    this.buffer = data.to_vec();
                 }
                 Some(Err(err)) => {
                     return std::task::Poll::Ready(Err(std::io::Error::new(ErrorKind::Other, err)))
