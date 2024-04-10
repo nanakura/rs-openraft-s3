@@ -1,6 +1,7 @@
 use crate::util::cry::{do_bytes_to_hex, do_hex, do_hmac_sha256};
 use anyhow::Context;
 use chrono::{NaiveDateTime, Utc};
+use log::info;
 use ntex::service::{Middleware, Service, ServiceCtx};
 use ntex::web;
 use ntex::web::HttpResponse;
@@ -44,7 +45,7 @@ where
             match valid_authorization_header(&req, access_key_id, secret_access_key) {
                 Ok(b) => flag = b,
                 Err(err) => {
-                    println!("middleware error: {}", err);
+                    info!("middleware error: {}", err);
                     flag = false
                 }
             }
@@ -56,7 +57,7 @@ where
                 match valid_authorization_url(&req, access_key_id, secret_access_key) {
                     Ok(b) => flag = b,
                     Err(err) => {
-                        println!("middleware error: {}", err);
+                        info!("middleware error: {}", err);
                         flag = false
                     }
                 }

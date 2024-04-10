@@ -14,6 +14,7 @@ use chrono::Utc;
 use futures::future::ok;
 use futures::stream::once;
 use futures::StreamExt;
+use log::info;
 use mime_guess::MimeGuess;
 use ntex::util::{Bytes, BytesMut};
 use ntex::web;
@@ -173,7 +174,7 @@ pub async fn get_bucket(
                 let meta_file_path = bucket_path.clone();
                 let meta_file_path = meta_file_path.join(&file.file_name());
                 let meta_file_path = meta_file_path.to_str().unwrap();
-                println!("{}", &meta_file_path);
+                info!("{}", &meta_file_path);
                 let metadata = fs::load_metadata(meta_file_path)?;
                 contents.push(Content {
                     size: metadata.size as i64,
@@ -269,7 +270,7 @@ pub async fn init_chunk_or_combine_chunk_longpath(
     let object_name: String = get_path_param(&req, "object")?;
     let object_suffix: String = get_path_param(&req, "objectSuffix")?;
     if let Some(upload_id) = query.upload_id {
-        println!("uploadId: {}", upload_id);
+        info!("uploadId: {}", upload_id);
         let mut bytes = BytesMut::new();
         while let Some(item) = body.next().await {
             let item = item.context("")?;
@@ -340,7 +341,7 @@ async fn combine_chunk(
     upload_id: &str,
     cmu: CompleteMultipartUpload,
 ) -> HandlerResponse {
-    println!("合并分片，uploadId: {}", upload_id);
+    info!("合并分片，uploadId: {}", upload_id);
     let mut part_etags = cmu.part_etags;
 
     let mut check = true;
@@ -356,7 +357,7 @@ async fn combine_chunk(
     tmp_metadata_dir.push_str(extension);
     let tmp_metadata_dir = PathBuf::from(tmp_metadata_dir);
     if !tmp_metadata_dir.as_path().exists() {
-        println!("未初始化");
+        info!("未初始化");
         return Err(Anyhow(anyhow!("未初始化".to_string())));
     }
 
@@ -377,13 +378,13 @@ async fn combine_chunk(
     }
 
     if !check {
-        println!("分片不完整");
+        info!("分片不完整");
         return Err(Anyhow(anyhow!("分片不完整".to_string())));
     }
     part_etags.sort_by_key(|p| p.part_number);
     let chunks: Vec<String> = part_etags.par_iter().map(|p| p.etag.clone()).collect();
     let mut metadata = fs::load_metadata(tmp_metadata_dir.to_string_lossy().as_ref())?;
-    println!("读取临时元数据成功");
+    info!("读取临时元数据成功");
     metadata.size = total_len;
     metadata.chunks = chunks;
     metadata.time = Utc::now();
@@ -396,7 +397,7 @@ async fn combine_chunk(
         .to_string();
     metadata_dir.push_str(".meta");
     save_metadata(&metadata_dir, &metadata)?;
-    println!("保存新元数据成功");
+    info!("保存新元数据成功");
     std::fs::remove_file(tmp_metadata_dir).context("删除临时元数据失败")?;
     std::fs::remove_dir_all(PathBuf::from(DATA_DIR).join("tmp").join(upload_id))
         .context("删除临时文件夹失败")?;
@@ -524,7 +525,7 @@ pub(crate) async fn upload_chunk(
         .map_err(|err| anyhow!(err.to_string()))?;
     let body = fs::compress_chunk(std::io::Cursor::new(&bytes))?;
     fs::save_file(&hash_clone, body)?;
-    Ok(HttpResponse::Ok().header("ETag", &hash).body(&hash))
+    Ok(HttpResponse::Ok().header("ETag", &hash).finish())
 }
 
 pub async fn delete_file(req: web::HttpRequest) -> HandlerResponse {
@@ -591,7 +592,7 @@ pub async fn head_object_longpath(req: web::HttpRequest) -> HandlerResponse {
 async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
     let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
     metainfo_file_path.push_str(".meta");
-    println!("{}", metainfo_file_path);
+    info!("{}", metainfo_file_path);
     if std::fs::metadata(&metainfo_file_path).is_err() {
         let resp = HeadNotFoundResp {
             no_exist: "1".to_string(),
@@ -636,7 +637,7 @@ pub async fn upload_file_or_upload_chunk_longpath(
         .to_string();
     match (query.upload_id, query.part_number) {
         (Some(upload_id), Some(part_number)) => {
-            println!("long path");
+            info!("long path");
             upload_chunk(&bucket_name, &object_key, &part_number, &upload_id, body).await
         }
         _ => {
