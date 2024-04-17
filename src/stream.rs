@@ -5,6 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
 
+// 请求体异步Reader
 pub struct PayloadAsyncReader {
     payload: web::types::Payload,
     buffer: Vec<u8>,
@@ -22,6 +23,7 @@ impl PayloadAsyncReader {
 }
 
 impl AsyncRead for PayloadAsyncReader {
+    // 实现请求体异步读取逻辑
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -49,6 +51,7 @@ impl AsyncRead for PayloadAsyncReader {
 }
 
 impl futures::AsyncRead for PayloadAsyncReader {
+    // 实现请求体异步读取逻辑
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

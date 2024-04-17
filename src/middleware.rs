@@ -73,6 +73,7 @@ where
     }
 }
 
+// 如果验证信息在请求头中
 fn valid_authorization_header(
     request: &web::WebRequest<impl web::ErrorRenderer>,
     access_key_id: &str,
@@ -178,7 +179,7 @@ fn valid_authorization_header(
     Ok(signature == str_hex_signature)
 }
 
-// TODO FIX: input has valid character
+// 如果验证信息在请求参数中
 fn valid_authorization_url(
     request: &web::WebRequest<impl web::ErrorRenderer>,
     access_key_id: &str,
@@ -296,6 +297,8 @@ fn valid_authorization_url(
     let str_hex_signature = do_bytes_to_hex(&auth_signature);
     Ok(signature == str_hex_signature)
 }
+
+// 解析请求参数中的参数
 fn parse_query_params(query_string: &str) -> HashMap<String, String> {
     let mut query_params = HashMap::new();
     for param in query_string.split('&') {

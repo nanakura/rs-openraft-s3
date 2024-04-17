@@ -13,6 +13,7 @@ use tokio::io::AsyncReadExt;
 use zstd::stream::read::Decoder;
 use zstd::zstd_safe::WriteBuf;
 
+// 定义元数据结构
 #[derive(Archive, Deserialize, Serialize, Debug, PartialEq)]
 #[archive(compare(PartialEq), check_bytes)]
 #[archive_attr(derive(Debug))]
@@ -24,8 +25,10 @@ pub struct Metadata {
     pub chunks: Vec<String>,
 }
 
+// 定义元数据存储路径前缀
 const PATH_PREFIX: &str = "data/file";
 
+// 将sh256值解析为hash路径
 pub(crate) fn path_from_hash(hash: &str) -> PathBuf {
     let hash_prefix = &hash[0..1];
     let hash_subprefix = &hash[1..3];
@@ -37,6 +40,7 @@ pub(crate) fn path_from_hash(hash: &str) -> PathBuf {
         .join(hash_suffix)
 }
 
+// 保存文件
 pub(crate) fn save_file(hash_code: &str, mut reader: impl std::io::Read) -> anyhow::Result<()> {
     let file_path = path_from_hash(hash_code);
     fs::create_dir_all(file_path.parent().unwrap())?;
@@ -46,6 +50,7 @@ pub(crate) fn save_file(hash_code: &str, mut reader: impl std::io::Read) -> anyh
     Ok(())
 }
 
+// 获取sha256值
 fn get_sha256(data: &[u8]) -> Vec<u8> {
     let mut hasher = Sha256::new();
     hasher.update(data);
@@ -53,17 +58,20 @@ fn get_sha256(data: &[u8]) -> Vec<u8> {
     result.to_vec()
 }
 
+// 获取sha256字符串
 fn get_sha256_string(hash: &[u8]) -> String {
     let hash_string: String = hash.encode_hex();
     //hash_string[..15].to_uppercase()
     hash_string.to_uppercase()
 }
 
+// 计算sha256值
 pub(crate) async fn sum_sha256(data: &[u8]) -> String {
     let sha256 = get_sha256(data);
     get_sha256_string(&sha256)
 }
 
+// 压缩分片
 pub(crate) fn compress_chunk(mut reader: impl std::io::Read) -> anyhow::Result<impl std::io::Read> {
     //let mut encoder = Encoder::new(Vec::new(), 0)?;
     let mut res = Vec::new();
@@ -73,6 +81,7 @@ pub(crate) fn compress_chunk(mut reader: impl std::io::Read) -> anyhow::Result<i
     Ok(Cursor::new(res))
 }
 
+// 解压分片
 fn decompress_chunk(chunk_path: &str) -> anyhow::Result<Vec<u8>> {
     let chunk_file = fs::read(chunk_path)?;
     let mut decoder = Decoder::new(chunk_file.as_slice())?;
@@ -81,6 +90,7 @@ fn decompress_chunk(chunk_path: &str) -> anyhow::Result<Vec<u8>> {
     Ok(result)
 }
 
+// 保存元数据
 pub(crate) fn save_metadata(meta_file_path: &str, metadata: &Metadata) -> anyhow::Result<()> {
     let meta_data = rkyv::to_bytes::<_, 256>(metadata)?;
     let meta_data = meta_data.as_slice();
@@ -90,6 +100,7 @@ pub(crate) fn save_metadata(meta_file_path: &str, metadata: &Metadata) -> anyhow
     Ok(())
 }
 
+// 加载元数据
 pub(crate) fn load_metadata(meta_file_path: &str) -> anyhow::Result<Metadata> {
     let metadata_bytes = fs::read(meta_file_path).context("元数据地址不存在")?;
     let metadata_bytes = cry::aes_256_cbc_decrypt(&metadata_bytes)?;
@@ -99,6 +110,7 @@ pub(crate) fn load_metadata(meta_file_path: &str) -> anyhow::Result<Metadata> {
     Ok(res)
 }
 
+// 定义解压流
 pub(crate) struct UncompressStream {
     hashes: Vec<String>,
     idx: usize,
@@ -110,6 +122,7 @@ impl UncompressStream {
     }
 }
 
+// 实现解压流的异步执行逻辑
 impl Stream for UncompressStream {
     type Item = io::Result<Bytes>;
 
@@ -138,6 +151,7 @@ impl Stream for UncompressStream {
 }
 
 #[allow(dead_code)]
+// 合并多个解压流reader为一个解压流reader
 pub(crate) async fn multi_decompressed_reader(
     file_paths: &[String],
 ) -> anyhow::Result<Vec<Box<dyn io::Read + Send + Unpin>>> {
@@ -152,11 +166,14 @@ pub(crate) async fn multi_decompressed_reader(
     Ok(readers)
 }
 
+// 判断路径是否存在
 pub(crate) fn is_path_exist(hash: &str) -> bool {
     let path = path_from_hash(hash);
     path.exists()
 }
 
+
+// 数据分片并保存
 pub(crate) async fn split_file_ann_save(
     mut reader: Box<dyn tokio::io::AsyncRead + Unpin>,
     chunk_size: usize,

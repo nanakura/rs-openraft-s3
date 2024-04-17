@@ -16,12 +16,18 @@ use rs_s3_local::middleware::CredentialsV4;
 
 #[ntex::main]
 async fn main() -> anyhow::Result<()> {
+    // 初始化环境日志记录器
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
+    // 创建一个新的 HTTP 服务器实例。
     web::HttpServer::new(move || {
         web::App::new()
+            // 应用 CORS 中间件，默认配置。
             .wrap(Cors::default())
+            // 应用 AWS 签名版本 4 的认证中间件。
             .wrap(CredentialsV4)
+            // 应用日志记录中间件，记录请求和响应。
             .wrap(middleware::Logger::default())
+            // 定义路由和相应的处理函数。
             .route("/", web::get().to(list_bucket))
             .route("/{bucket}", web::get().to(get_bucket))
             .route("/{bucket}", web::head().to(head_bucket))

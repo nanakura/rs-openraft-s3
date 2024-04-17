@@ -33,6 +33,7 @@ const BASIC_PATH_SUFFIX: &str = "buckets";
 
 type HandlerResponse = Result<HttpResponse, AppError>;
 
+// 从uri path中获取参数
 fn get_path_param(req: &web::HttpRequest, name: &str) -> Result<String, AppError> {
     let param: String = req
         .match_info()
@@ -42,6 +43,7 @@ fn get_path_param(req: &web::HttpRequest, name: &str) -> Result<String, AppError
     Ok(param)
 }
 
+// 获取所有桶的列表
 pub async fn list_bucket() -> HandlerResponse {
     let dir_path = PathBuf::from(DATA_DIR).join(BASIC_PATH_SUFFIX);
     let dir_path = dir_path.as_path();
@@ -154,6 +156,7 @@ mod test {
 pub struct GetBucketQueryParams {
     pub prefix: Option<String>,
 }
+// 获取桶的数据
 pub async fn get_bucket(
     req: web::HttpRequest,
     Query(query): Query<GetBucketQueryParams>,
@@ -198,6 +201,8 @@ pub async fn get_bucket(
         Ok(HttpResponse::NotFound().finish())
     }
 }
+
+// 查询桶是否存在
 pub async fn head_bucket(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let file_path = PathBuf::from(DATA_DIR)
@@ -211,6 +216,8 @@ pub async fn head_bucket(req: web::HttpRequest) -> HandlerResponse {
             .finish())
     }
 }
+
+// 创建桶
 pub async fn create_bucket(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let file_path = PathBuf::from(DATA_DIR)
@@ -220,6 +227,7 @@ pub async fn create_bucket(req: web::HttpRequest) -> HandlerResponse {
     Ok(HttpResponse::Ok().content_type("application/xml").finish())
 }
 
+// 删除桶
 pub async fn delete_bucket(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let file_path = PathBuf::from(DATA_DIR)
@@ -240,6 +248,8 @@ pub struct InitChunkOrCombineQuery {
     #[serde(rename = "uploadId")]
     pub upload_id: Option<String>,
 }
+
+// 初始化分片上传 & 完成分片上传
 pub async fn init_chunk_or_combine_chunk(
     req: web::HttpRequest,
     mut body: web::types::Payload,
@@ -261,6 +271,9 @@ pub async fn init_chunk_or_combine_chunk(
         init_chunk(bucket_name, object_name).await
     }
 }
+
+
+// 对长路径的初始化分片上传或完成分片上传
 pub async fn init_chunk_or_combine_chunk_longpath(
     req: web::HttpRequest,
     mut body: web::types::Payload,
@@ -297,6 +310,7 @@ pub async fn init_chunk_or_combine_chunk_longpath(
     }
 }
 
+// 初始化分片上传
 async fn init_chunk(bucket: String, object_key: String) -> HandlerResponse {
     let guid = Uuid::new_v4();
     let upload_id = guid.to_string();
@@ -335,6 +349,8 @@ async fn init_chunk(bucket: String, object_key: String) -> HandlerResponse {
     Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
 }
 
+
+// 完成分片上传
 async fn combine_chunk(
     bucket_name: &str,
     object_key: &str,
@@ -412,6 +428,7 @@ async fn combine_chunk(
     Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
 }
 
+// 查询对象信息
 pub async fn head_object(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
@@ -430,6 +447,8 @@ pub struct UploadFileOrChunkQuery {
     #[serde(rename = "partNumber")]
     pub part_number: Option<String>,
 }
+
+// 上传文件 & 上传文件分片
 pub async fn upload_file_or_upload_chunk(
     req: web::HttpRequest,
     body: web::types::Payload,
@@ -460,6 +479,7 @@ pub async fn upload_file_or_upload_chunk(
     }
 }
 
+// 桶间拷贝对象数据
 async fn copy_object(copy_source: &str, dest_bucket: &str, dest_object: &str) -> HandlerResponse {
     let mut copy_source = copy_source.to_string();
     if copy_source.contains('?') {
@@ -496,6 +516,7 @@ async fn copy_object(copy_source: &str, dest_bucket: &str, dest_object: &str) ->
     Ok(HttpResponse::Ok().finish())
 }
 
+// 上传分片
 pub(crate) async fn upload_chunk(
     _bucket_name: &str,
     _object_key: &str,
@@ -528,6 +549,7 @@ pub(crate) async fn upload_chunk(
     Ok(HttpResponse::Ok().header("ETag", &hash).finish())
 }
 
+// 删除文件
 pub async fn delete_file(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
@@ -538,6 +560,7 @@ pub async fn delete_file(req: web::HttpRequest) -> HandlerResponse {
     do_delete_file(file_path).await
 }
 
+// 删除文件逻辑
 async fn do_delete_file(file_path: PathBuf) -> HandlerResponse {
     let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
     metainfo_file_path.push_str(".meta");
@@ -549,6 +572,8 @@ async fn do_delete_file(file_path: PathBuf) -> HandlerResponse {
         .content_type("application/xml")
         .finish())
 }
+
+// 上传文件
 async fn upload_file(file_path: PathBuf, body: web::types::Payload) -> HandlerResponse {
     let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
     metainfo_file_path.push_str(".meta");
@@ -577,6 +602,7 @@ async fn upload_file(file_path: PathBuf, body: web::types::Payload) -> HandlerRe
         .finish())
 }
 
+// 长路径获取对象信息
 pub async fn head_object_longpath(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
@@ -589,6 +615,7 @@ pub async fn head_object_longpath(req: web::HttpRequest) -> HandlerResponse {
     do_head_object(file_path).await
 }
 
+// 获取对象信息逻辑
 async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
     let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
     metainfo_file_path.push_str(".meta");
@@ -618,6 +645,7 @@ async fn do_head_object(file_path: PathBuf) -> HandlerResponse {
         .streaming(body))
 }
 
+// 长路径上传文件 & 上传文件分片
 pub async fn upload_file_or_upload_chunk_longpath(
     req: web::HttpRequest,
     body: web::types::Payload,
@@ -654,6 +682,8 @@ pub async fn upload_file_or_upload_chunk_longpath(
         }
     }
 }
+
+// 长路径删除文件
 pub async fn delete_file_longpath(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
@@ -665,6 +695,8 @@ pub async fn delete_file_longpath(req: web::HttpRequest) -> HandlerResponse {
         .join(object_suffix);
     do_delete_file(file_path).await
 }
+
+// 产路径删除文件
 pub async fn download_file_longpath(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
@@ -676,6 +708,8 @@ pub async fn download_file_longpath(req: web::HttpRequest) -> HandlerResponse {
         .join(object_suffix);
     do_download_file(file_path).await
 }
+
+// 下载文件
 pub async fn download_file(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
@@ -686,6 +720,8 @@ pub async fn download_file(req: web::HttpRequest) -> HandlerResponse {
     do_download_file(file_path).await
 }
 
+
+// 下载文件逻辑
 async fn do_download_file(file_path: PathBuf) -> HandlerResponse {
     let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
     metainfo_file_path.push_str(".meta");

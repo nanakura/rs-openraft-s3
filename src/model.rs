@@ -1,6 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+// 定义数据结构
+
+// 桶数据
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Bucket {
     #[serde(rename = "Name")]
@@ -9,12 +12,14 @@ pub struct Bucket {
     pub creation_date: String,
 }
 
+// 完成上传请求体
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CompleteMultipartUpload {
     #[serde(rename = "Part")]
     pub part_etags: Vec<PartETag>,
 }
 
+// 完成上传返回结果
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CompleteMultipartUploadResult {
     #[serde(rename = "BucketName")]
@@ -25,6 +30,7 @@ pub struct CompleteMultipartUploadResult {
     pub etag: String,
 }
 
+// 初始化分片上传请求结果
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InitiateMultipartUploadResult {
     #[serde(rename = "Bucket")]
@@ -39,6 +45,8 @@ pub struct InitiateMultipartUploadResult {
 // pub struct ListBucketsResult {
 //     pub buckets: Vec<Bucket>,
 // }
+
+// 文件列表
 #[derive(Debug, Serialize)]
 #[serde(rename = "ListBucketResult")]
 pub struct ListBucketResult {
@@ -54,6 +62,7 @@ pub struct ListBucketResult {
     pub contents: Vec<Content>,
 }
 
+// 文件列表数据实体
 #[derive(Debug, Serialize)]
 pub struct Content {
     #[serde(rename = "Key")]
@@ -65,12 +74,14 @@ pub struct Content {
     pub size: i64,
 }
 
+// 判断是否存在请求结果
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HeadNotFoundResp {
     #[serde(rename = "NoExist")]
     pub no_exist: String,
 }
 
+// 元数据
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ObjectMetadata {
     pub content_type: String,
@@ -79,6 +90,8 @@ pub struct ObjectMetadata {
     pub file_name: String,
 }
 
+
+// 分片上传tag
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PartETag {
     #[serde(rename = "PartNumber")]
@@ -87,6 +100,7 @@ pub struct PartETag {
     pub etag: String,
 }
 
+// S3对象
 #[derive(Debug, Serialize, Deserialize)]
 pub struct S3Object {
     #[serde(rename = "BucketName")]
@@ -97,6 +111,7 @@ pub struct S3Object {
     pub metadata: ObjectMetadata,
 }
 
+// 上传文件请求结果
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UploadFileResp {
     #[serde(rename = "ETag")]
@@ -105,18 +120,21 @@ pub struct UploadFileResp {
     pub last_modified: String,
 }
 
+// 桶信息实体
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BucketWrapper {
     #[serde(rename = "Bucket")]
     pub bucket: Vec<Bucket>,
 }
 
+// 桶拥有者实体
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Owner {
     #[serde(rename = "DisplayName")]
     pub display_name: String,
 }
 
+// 桶列表请求结果
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListBucketResp {
     #[serde(rename = "Id")]

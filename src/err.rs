@@ -1,6 +1,7 @@
 use ntex::web;
 use thiserror::Error;
 
+// 自定义错误类型
 #[allow(dead_code)]
 #[derive(Error, Debug)]
 pub enum AppError {
