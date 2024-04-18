@@ -172,7 +172,6 @@ pub(crate) fn is_path_exist(hash: &str) -> bool {
     path.exists()
 }
 
-
 // 数据分片并保存
 pub(crate) async fn split_file_ann_save(
     mut reader: Box<dyn tokio::io::AsyncRead + Unpin>,
@@ -214,28 +213,3 @@ pub(crate) async fn split_file_ann_save(
     Ok((size, chunks))
 }
 
-#[cfg(test)]
-mod test {
-    use crate::fs::Metadata;
-    use rkyv::{Deserialize, Infallible};
-
-    #[test]
-    fn test1() {
-        let m = Metadata {
-            name: "xxx".to_string(),
-            size: 10,
-            file_type: "xxxxx".to_string(),
-            time: Default::default(),
-            chunks: vec![],
-        };
-
-        let bytes = rkyv::to_bytes::<_, 256>(&m).unwrap();
-        let bytes = bytes.as_slice();
-        let archived = rkyv::check_archived_root::<Metadata>(&bytes[..]).unwrap();
-        let res: Metadata = archived.deserialize(&mut Infallible).unwrap();
-        assert_eq!(m, res)
-    }
-
-    #[test]
-    fn test2() {}
-}

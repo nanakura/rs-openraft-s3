@@ -1,6 +1,5 @@
 use crate::err::AppError;
 use crate::err::AppError::{Anyhow, BadRequest};
-use crate::{fs, HandlerResponse};
 use crate::fs::{save_metadata, split_file_ann_save, Metadata, UncompressStream};
 use crate::model::{
     Bucket, BucketWrapper, CompleteMultipartUpload, CompleteMultipartUploadResult, Content,
@@ -9,6 +8,7 @@ use crate::model::{
 use crate::stream::PayloadAsyncReader;
 use crate::util::cry;
 use crate::util::date::date_format_to_second;
+use crate::{fs, HandlerResponse};
 use anyhow::{anyhow, Context};
 use chrono::Utc;
 use futures::future::ok;
@@ -35,7 +35,10 @@ pub fn rest(cfg: &mut web::ServiceConfig) {
     cfg
         // 应用日志记录中间件，记录请求和响应。
         // 定义路由和相应的处理函数。
-        .route("/health", web::get().to(|| async { web::HttpResponse::Ok().body("ok") }))
+        .route(
+            "/health",
+            web::get().to(|| async { web::HttpResponse::Ok().body("ok") }),
+        )
         .route("/api", web::get().to(list_bucket))
         .route("/api/{bucket}", web::get().to(get_bucket))
         .route("/api/{bucket}", web::head().to(head_bucket))
@@ -135,67 +138,6 @@ pub async fn list_bucket() -> HandlerResponse {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use serde::Serialize;
-    #[test]
-    fn test1() {
-        let mut buckets = Vec::new();
-        buckets.push(Bucket {
-            name: "xx".to_string(),
-            creation_date: "111".to_string(),
-        });
-        let list_res = ListBucketResp {
-            id: "20230529".to_string(),
-            owner: Owner {
-                display_name: "minioadmin".to_string(),
-            },
-            buckets: BucketWrapper { bucket: buckets },
-        };
-        let xml = to_string(&list_res);
-        assert!(xml.is_ok(), "序列化错误");
-    }
-
-    #[derive(Serialize, Deserialize, Debug, PartialEq)]
-    struct Person {
-        #[serde(rename = "FullName")]
-        full_name: String,
-        age: u32,
-        #[serde(rename = "Address")]
-        addresses: Vec<Address>,
-    }
-
-    #[derive(Serialize, Deserialize, Debug, PartialEq)]
-    struct Address {
-        street: String,
-        city: String,
-        state: String,
-    }
-
-    #[test]
-    fn test2() {
-        let person = Person {
-            full_name: "John Doe".to_string(),
-            age: 30,
-            addresses: vec![
-                Address {
-                    street: "123 Main St".to_string(),
-                    city: "New York".to_string(),
-                    state: "NY".to_string(),
-                },
-                Address {
-                    street: "456 Elm St".to_string(),
-                    city: "Los Angeles".to_string(),
-                    state: "CA".to_string(),
-                },
-            ],
-        };
-        // Serialize to XML
-        let xml = to_string(&person);
-        assert!(xml.is_ok(), "序列化失败");
-    }
-}
 
 #[derive(Deserialize)]
 pub struct GetBucketQueryParams {
@@ -317,7 +259,6 @@ pub async fn init_chunk_or_combine_chunk(
     }
 }
 
-
 // 对长路径的初始化分片上传或完成分片上传
 pub async fn init_chunk_or_combine_chunk_longpath(
     req: web::HttpRequest,
@@ -393,7 +334,6 @@ async fn init_chunk(bucket: String, object_key: String) -> HandlerResponse {
     let xml = to_string(&resp).map_err(|err| anyhow!(err))?;
     Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
 }
-
 
 // 完成分片上传
 async fn combine_chunk(
@@ -764,7 +704,6 @@ pub async fn download_file(req: web::HttpRequest) -> HandlerResponse {
         .join(object_name);
     do_download_file(file_path).await
 }
-
 
 // 下载文件逻辑
 async fn do_download_file(file_path: PathBuf) -> HandlerResponse {

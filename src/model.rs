@@ -90,7 +90,6 @@ pub struct ObjectMetadata {
     pub file_name: String,
 }
 
-
 // 分片上传tag
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PartETag {

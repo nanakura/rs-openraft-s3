@@ -6,6 +6,7 @@ edition = "2021"
 
 [[bin]]
 name = "s3-server"
+path = "src/bin/s3-server.rs"
 
 [dependencies]
 ntex = { version = "1", features = ["tokio"] }

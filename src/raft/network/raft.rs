@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use log::debug;
+use std::sync::Arc;
 
 use openraft::raft::AppendEntriesRequest;
 use openraft::raft::AppendEntriesResponse;

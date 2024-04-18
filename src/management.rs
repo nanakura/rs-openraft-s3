@@ -1,15 +1,15 @@
 use anyhow::Context;
+use log::info;
 use ntex::util::BytesMut;
 use ntex::web;
 use ntex::web::types::Payload;
 use ntex::web::HttpResponse;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use log::info;
 
+use crate::HandlerResponse;
 use openraft::error::Infallible;
 use openraft::RaftMetrics;
-use crate::HandlerResponse;
 
 use crate::raft::app::App;
 use crate::raft::Node;

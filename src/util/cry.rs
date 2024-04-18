@@ -71,7 +71,6 @@ pub fn do_hmac_sha256(key: &[u8], data: &str) -> anyhow::Result<Vec<u8>> {
     Ok(Vec::from(x))
 }
 
-
 // 将字节向量转换为十六进制字符串的函数。
 pub fn do_bytes_to_hex(bytes: &[u8]) -> String {
     let hex_array: [char; 16] = [
@@ -92,24 +91,3 @@ pub fn do_bytes_to_hex(bytes: &[u8]) -> String {
 //     Ok(string)
 // }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    #[test]
-    fn test1() {
-        let code = do_hmac_sha256(b"my secret and secure key", "input message").unwrap();
-        assert_eq!(
-            hex::encode(code),
-            "97d2a569059bbcd8ead4444ff99071f4c01d005bcefe0d3567e1be628e5fdcd9"
-        );
-    }
-
-    #[test]
-    fn test2() {
-        let s = "xxxxxx";
-        let en = aes_256_cbc_encrypt(s.as_bytes()).unwrap();
-        //let en = general_purpose::STANDARD.encode(&en);
-        let de = String::from_utf8(aes_256_cbc_decrypt(&en).unwrap()).unwrap();
-        assert_eq!(s, &de);
-    }
-}

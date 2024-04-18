@@ -1,27 +1,27 @@
-use std::path::Path;
-use std::sync::Arc;
+use crate::err::AppError;
+use crate::middleware::CredentialsV4;
+use crate::raft::app::App;
+use crate::raft::network::Network;
+use crate::raft::store::new_storage;
+use crate::raft::{network, NodeId};
 use log::info;
 use ntex::web;
 use ntex::web::HttpResponse;
 use ntex_cors::Cors;
 use openraft::Config;
+use std::path::Path;
+use std::sync::Arc;
 use tokio::net::TcpListener;
-use crate::err::AppError;
-use crate::middleware::CredentialsV4;
-use crate::raft::app::App;
-use crate::raft::network::Network;
-use crate::raft::{network, NodeId};
-use crate::raft::store::new_storage;
 
-mod err;
-mod fs;
 pub mod api;
-pub mod middleware;
-mod model;
-mod stream;
-mod util;
-mod raft;
+mod err;
+pub mod fs;
 pub mod management;
+pub mod middleware;
+pub mod model;
+mod raft;
+mod stream;
+pub mod util;
 pub type HandlerResponse = Result<HttpResponse, AppError>;
 
 pub async fn start_example_raft_node<P>(
@@ -30,8 +30,8 @@ pub async fn start_example_raft_node<P>(
     http_addr: String,
     rpc_addr: String,
 ) -> std::io::Result<()>
-    where
-        P: AsRef<Path>,
+where
+    P: AsRef<Path>,
 {
     // Create a configuration for the raft instance.
     let config = Config {
@@ -58,8 +58,8 @@ pub async fn start_example_raft_node<P>(
         log_store,
         state_machine_store,
     )
-        .await
-        .unwrap();
+    .await
+    .unwrap();
 
     let app = App {
         id: node_id,
@@ -94,8 +94,9 @@ pub async fn start_example_raft_node<P>(
             .wrap(CredentialsV4)
             .configure(api::rest)
     })
-        .bind(http_addr).unwrap()
-        .run()
-        .await;
+    .bind(http_addr)
+    .unwrap()
+    .run()
+    .await;
     Ok(())
 }

@@ -1,6 +1,6 @@
+use crate::raft::store::{Request, Response};
 use std::fmt::Display;
 use std::io::Cursor;
-use crate::raft::store::{Request, Response};
 
 pub mod app;
 pub mod client;

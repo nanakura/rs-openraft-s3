@@ -32,6 +32,7 @@ async fn main() -> anyhow::Result<()> {
         format!("{}-db", options.id),
         options.http_addr,
         options.rpc_addr,
-    ).await?;
+    )
+    .await?;
     Ok(())
 }
