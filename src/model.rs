@@ -13,7 +13,7 @@ pub struct Bucket {
 }
 
 // 完成上传请求体
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompleteMultipartUpload {
     #[serde(rename = "Part")]
     pub part_etags: Vec<PartETag>,
@@ -91,7 +91,7 @@ pub struct ObjectMetadata {
 }
 
 // 分片上传tag
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartETag {
     #[serde(rename = "PartNumber")]
     pub part_number: i32,

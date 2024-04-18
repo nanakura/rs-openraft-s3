@@ -8,7 +8,7 @@ use openraft::error::RemoteError;
 use openraft::error::Unreachable;
 use openraft::RaftMetrics;
 use openraft::TryAsRef;
-use reqwest::Client;
+use reqwest::{Client};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
@@ -30,6 +30,14 @@ pub struct ExampleClient {
     pub inner: Client,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum Method {
+    GET,
+    POST,
+    PUT,
+    DELETE
+}
+
 impl ExampleClient {
     /// Create a client with a leader node id and a node manager to get node address by node id.
     pub fn new(leader_id: NodeId, leader_addr: String) -> Self {
@@ -48,29 +56,20 @@ impl ExampleClient {
     /// will be applied to state machine.
     ///
     /// The result of applying the request will be returned.
-    pub async fn write(
+    pub async fn create_bucket(
         &self,
         req: &Request,
     ) -> Result<typ::ClientWriteResponse, typ::RPCError<typ::ClientWriteError>> {
-        self.send_rpc_to_leader("api/write", Some(req)).await
+        
+        self.send_rpc_to_leader("api/write", Some(req), Method::PUT).await
     }
 
-    /// Read value by key, in an inconsistent mode.
-    ///
-    /// This method may return stale value because it does not force to read on a legal leader.
-    pub async fn read(&self, req: &String) -> Result<String, typ::RPCError> {
-        self.do_send_rpc_to_leader("api/read", Some(req)).await
-    }
-
-    /// Consistent Read value by key, in an inconsistent mode.
-    ///
-    /// This method MUST return consistent value or CheckIsLeaderError.
-    pub async fn consistent_read(
+    pub async fn delete_bucket(
         &self,
-        req: &String,
-    ) -> Result<String, typ::RPCError<typ::CheckIsLeaderError>> {
-        self.do_send_rpc_to_leader("api/consistent_read", Some(req))
-            .await
+        req: &Request,
+    ) -> Result<typ::ClientWriteResponse, typ::RPCError<typ::ClientWriteError>> {
+
+        self.send_rpc_to_leader("api/write", Some(req), Method::DELETE).await
     }
 
     // --- Cluster management API
@@ -82,7 +81,7 @@ impl ExampleClient {
     /// Then setup replication with [`add_learner`].
     /// Then make the new node a member with [`change_membership`].
     pub async fn init(&self) -> Result<(), typ::RPCError<typ::InitializeError>> {
-        self.do_send_rpc_to_leader("cluster/init", Some(&Empty {}))
+        self.do_send_rpc_to_leader("cluster/init", Some(&Empty {}), Method::POST)
             .await
     }
 
@@ -93,7 +92,7 @@ impl ExampleClient {
         &self,
         req: (NodeId, String, String),
     ) -> Result<typ::ClientWriteResponse, typ::RPCError<typ::ClientWriteError>> {
-        self.send_rpc_to_leader("cluster/add-learner", Some(&req))
+        self.send_rpc_to_leader("cluster/add-learner", Some(&req), Method::POST)
             .await
     }
 
@@ -105,7 +104,7 @@ impl ExampleClient {
         &self,
         req: &BTreeSet<NodeId>,
     ) -> Result<typ::ClientWriteResponse, typ::RPCError<typ::ClientWriteError>> {
-        self.send_rpc_to_leader("cluster/change-membership", Some(req))
+        self.send_rpc_to_leader("cluster/change-membership", Some(req), Method::POST)
             .await
     }
 
@@ -115,7 +114,7 @@ impl ExampleClient {
     /// membership config, replication status etc.
     /// See [`RaftMetrics`].
     pub async fn metrics(&self) -> Result<RaftMetrics<NodeId, Node>, typ::RPCError> {
-        self.do_send_rpc_to_leader("cluster/metrics", None::<&()>)
+        self.do_send_rpc_to_leader("cluster/metrics", None::<&()>, Method::POST)
             .await
     }
 
@@ -130,6 +129,7 @@ impl ExampleClient {
         &self,
         uri: &str,
         req: Option<&Req>,
+        method: Method
     ) -> Result<Resp, RPCError<NodeId, Node, Err>>
     where
         Req: Serialize + 'static,
@@ -141,14 +141,18 @@ impl ExampleClient {
             let target_addr = &t.1;
             (t.0, format!("http://{}/{}", target_addr, uri))
         };
-
         let resp = if let Some(r) = req {
             println!(
                 ">>> client send request to {}: {}",
                 url,
                 serde_json::to_string_pretty(&r).unwrap()
             );
-            self.inner.post(url.clone()).json(r)
+            match method {
+                Method::GET => self.inner.get(url.clone()),
+                Method::POST => self.inner.post(url.clone()).json(r),
+                Method::PUT => self.inner.put(url.clone()).json(r),
+                Method::DELETE => self.inner.delete(url.clone()),
+            }
         } else {
             println!(">>> client send request to {}", url,);
             self.inner.get(url.clone())
@@ -184,6 +188,7 @@ impl ExampleClient {
         &self,
         uri: &str,
         req: Option<&Req>,
+        method: Method
     ) -> Result<Resp, typ::RPCError<Err>>
     where
         Req: Serialize + 'static,
@@ -198,7 +203,7 @@ impl ExampleClient {
         let mut n_retry = 3;
 
         loop {
-            let res: Result<Resp, typ::RPCError<Err>> = self.do_send_rpc_to_leader(uri, req).await;
+            let res: Result<Resp, typ::RPCError<Err>> = self.do_send_rpc_to_leader(uri, req, method).await;
 
             let rpc_err = match res {
                 Ok(x) => return Ok(x),

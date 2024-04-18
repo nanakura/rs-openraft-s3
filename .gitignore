@@ -5,3 +5,5 @@ data/
 *.stacks
 *.svg
 *-db/
+*.py
+*.txt

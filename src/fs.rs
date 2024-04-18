@@ -9,7 +9,6 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{self, Cursor, Read};
 use std::path::{Path, PathBuf};
-use tokio::io::AsyncReadExt;
 use zstd::stream::read::Decoder;
 use zstd::zstd_safe::WriteBuf;
 
@@ -174,14 +173,15 @@ pub(crate) fn is_path_exist(hash: &str) -> bool {
 
 // 数据分片并保存
 pub(crate) async fn split_file_ann_save(
-    mut reader: Box<dyn tokio::io::AsyncRead + Unpin>,
+    data: Vec<u8>,
     chunk_size: usize,
 ) -> anyhow::Result<(usize, Vec<String>)> {
     let mut chunks = Vec::new();
     let mut size = 0;
     let mut buffer = BytesMut::new();
+    let mut reader = Cursor::new(data);
     loop {
-        let read = reader.read_buf(&mut buffer).await?;
+        let read = reader.read(&mut buffer)?;
         if read > 0 {
             size += read;
             if buffer.len() >= chunk_size {

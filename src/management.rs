@@ -18,7 +18,12 @@ use crate::raft::NodeId;
 // --- Cluster management
 
 pub fn rest(cfg: &mut web::ServiceConfig) {
-    cfg.route("/cluster/add-learner", web::post().to(add_learner))
+    cfg
+        .route(
+            "/health",
+            web::get().to(|| async { web::HttpResponse::Ok().body("ok") }),
+        )
+        .route("/cluster/add-learner", web::post().to(add_learner))
         .route(
             "/cluster/change-membership",
             web::post().to(change_membership),
@@ -38,7 +43,7 @@ pub async fn add_learner(mut payload: Payload, state: web::types::State<App>) ->
         bytes.extend_from_slice(&item.unwrap());
     }
     let (node_id, api_addr, rpc_addr): (NodeId, String, String) =
-        serde_json::from_slice(&bytes.to_vec()[..]).context("deserialize json failed")?;
+        serde_json::from_slice(&bytes).context("deserialize json failed")?;
     let node = Node { rpc_addr, api_addr };
     let res = state.raft.add_learner(node_id, node, true).await;
     Ok(HttpResponse::Ok().json(&res))
@@ -54,7 +59,7 @@ pub async fn change_membership(
         bytes.extend_from_slice(&item.unwrap());
     }
     let body: BTreeSet<NodeId> =
-        serde_json::from_slice(&bytes.to_vec()[..]).context("deserialize json failed")?;
+        serde_json::from_slice(&bytes).context("deserialize json failed")?;
     let res = state.raft.change_membership(body, false).await;
     Ok(HttpResponse::Ok().json(&res))
 }

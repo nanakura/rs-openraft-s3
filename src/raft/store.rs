@@ -2,13 +2,19 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::io::Cursor;
 use std::ops::RangeBounds;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use anyhow::{anyhow, Context};
 
 use byteorder::BigEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
-use log::debug;
+use chrono::Utc;
+use futures::StreamExt;
+use log::{debug, info};
+use mime_guess::MimeGuess;
+use ntex::web;
+use ntex::web::HttpResponse;
 use openraft::storage::LogFlushed;
 use openraft::storage::LogState;
 use openraft::storage::RaftLogStorage;
@@ -28,6 +34,8 @@ use openraft::StorageError;
 use openraft::StorageIOError;
 use openraft::StoredMembership;
 use openraft::Vote;
+use quick_xml::se::to_string;
+use rayon::iter::IntoParallelRefIterator;
 use rocksdb::ColumnFamily;
 use rocksdb::ColumnFamilyDescriptor;
 use rocksdb::Direction;
@@ -36,12 +44,20 @@ use rocksdb::DB;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::RwLock;
+use uuid::Uuid;
+use crate::err::AppError::Anyhow;
+use crate::fs::{Metadata, save_metadata, split_file_ann_save};
+use crate::{fs, HandlerResponse};
+use crate::api::{BASIC_PATH_SUFFIX, DATA_DIR};
+use crate::model::{CompleteMultipartUpload, CompleteMultipartUploadResult, InitiateMultipartUploadResult};
 
 use crate::raft::typ;
 use crate::raft::Node;
 use crate::raft::NodeId;
 use crate::raft::SnapshotData;
 use crate::raft::TypeConfig;
+use crate::util::cry;
+use rayon::prelude::*;
 
 /**
  * Here you will set the types of request that will interact with the raft nodes.
@@ -51,7 +67,14 @@ use crate::raft::TypeConfig;
  */
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Request {
-    Set { key: String, value: String },
+    CreateBucket {bucket_name:String},
+    DeleteBucket{bucket_name:String},
+    InitChunk{bucket_name:String, object_key:String},
+    UploadChunk{part_number:String, upload_id:String, body: Vec<u8>},
+    UploadFile{file_path:String, body: Vec<u8>},
+    CombineChunk{bucket_name:String, object_key:String, upload_id:String, cmu: CompleteMultipartUpload},
+    DeleteFile{file_path:String},
+    CopyFile{copy_source: String, dest_bucket: String, dest_object: String}
 }
 
 /**
@@ -236,17 +259,43 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
         for ent in entries {
             self.data.last_applied_log_id = Some(ent.log_id);
 
-            let mut resp_value = None;
+            let resp_value = None;
 
             match ent.payload {
                 EntryPayload::Blank => {}
                 EntryPayload::Normal(req) => match req {
-                    Request::Set { key, value } => {
-                        // TODO implement app logic
-                        resp_value = Some(value.clone());
-
-                        let mut st = self.data.kvs.write().await;
-                        st.insert(key, value);
+                    // TODO
+                    Request::CreateBucket {bucket_name} =>{
+                        std::fs::create_dir_all(bucket_name).context("创建桶失败").unwrap();
+                    },
+                    Request::DeleteBucket {bucket_name} => {
+                        if std::fs::metadata(&bucket_name).is_ok() {
+                            std::fs::remove_dir_all(&bucket_name).context("删除桶失败").unwrap();
+                        }
+                    },
+                    // Request::Set { key, value } => {
+                    //     resp_value = Some(value.clone());
+                    //
+                    //     let mut st = self.data.kvs.write().await;
+                    //     st.insert(key, value);
+                    // }
+                    Request::InitChunk { bucket_name, object_key } => {
+                        init_chunk(bucket_name, object_key).await;
+                    }
+                    Request::UploadChunk { part_number, upload_id, body } => {
+                        upload_chunk(&part_number, &upload_id, body).await;
+                    }
+                    Request::UploadFile { file_path, body } => {
+                        upload_file(file_path, body).await;
+                    }
+                    Request::CombineChunk { bucket_name, object_key, upload_id, cmu } => {
+                        combine_chunk(&bucket_name, &object_key, &upload_id, cmu).await;
+                    }
+                    Request::DeleteFile { file_path } => {
+                        do_delete_file(file_path).await;
+                    }
+                    Request::CopyFile { copy_source, dest_bucket, dest_object } => {
+                        copy_object(&copy_source, &dest_bucket, &dest_object).await;
                     }
                 },
                 EntryPayload::Membership(mem) => {
@@ -296,6 +345,225 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
             snapshot: Box::new(Cursor::new(s.data.clone())),
         }))
     }
+}
+
+
+
+// 上传文件
+async fn upload_file(metainfo_file_path: String, body: Vec<u8>) -> HandlerResponse {
+    let file_name = PathBuf::from(&metainfo_file_path)
+        .file_name()
+        .context("解析文件名失败")?
+        .to_string_lossy()
+        .to_string();
+    let tmp_filename = file_name.clone();
+    let file_type = MimeGuess::from_path(Path::new(&tmp_filename))
+        .first_or_text_plain()
+        .to_string();
+
+    let (file_size, hashcodes) = split_file_ann_save(body, 8 << 20).await?;
+    let metainfo = Metadata {
+        name: file_name,
+        size: file_size as u64,
+        file_type: file_type.to_string(),
+        time: Utc::now(),
+        chunks: hashcodes,
+    };
+    fs::save_metadata(&metainfo_file_path, &metainfo)?;
+    Ok(web::HttpResponse::Ok()
+        .content_type("application/xml")
+        .finish())
+}
+
+// 桶间拷贝对象数据
+async fn copy_object(copy_source: &str, dest_bucket: &str, dest_object: &str) -> HandlerResponse {
+    let mut copy_source = copy_source.to_string();
+    if copy_source.contains('?') {
+        copy_source = copy_source.split('?').next().unwrap().to_string();
+    }
+
+    let copy_list: Vec<&str> = copy_source.split('/').collect();
+    let copy_list = &copy_list[..copy_list.len() - 1];
+
+    let mut src_bucket_name = String::new();
+    for &it in copy_list {
+        if !it.is_empty() {
+            src_bucket_name = it.to_string();
+            break;
+        }
+    }
+
+    let mut res = String::new();
+    for i in copy_list.iter().skip(1) {
+        res.push_str(i);
+        res.push('/');
+    }
+    let src_object = &res;
+    let src_metadata_path = PathBuf::from(DATA_DIR)
+        .join(BASIC_PATH_SUFFIX)
+        .join(src_bucket_name)
+        .join(src_object);
+    let dest_metadata_path = PathBuf::from(DATA_DIR)
+        .join(BASIC_PATH_SUFFIX)
+        .join(dest_bucket)
+        .join(dest_object);
+    std::fs::copy(src_metadata_path, dest_metadata_path).map_err(|err| anyhow!(err))?;
+
+    Ok(HttpResponse::Ok().finish())
+}
+
+// 上传分片
+pub(crate) async fn upload_chunk(
+    part_number: &str,
+    upload_id: &str,
+    body: Vec<u8>,
+) -> HandlerResponse {
+    let hash = fs::sum_sha256(&body).await;
+    let path = fs::path_from_hash(&hash);
+    if fs::is_path_exist(&path.to_string_lossy().to_string()) {
+        return Ok(HttpResponse::Ok().header("ETag", &hash).body(&hash));
+    }
+    let hash_clone = hash.clone();
+    let len = body.len();
+    let part_path = PathBuf::from(DATA_DIR)
+        .join("tmp")
+        .join(upload_id)
+        .join(part_number);
+    tokio::fs::write(part_path, format!("{}", len))
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?;
+    let body = fs::compress_chunk(std::io::Cursor::new(&body))?;
+    fs::save_file(&hash_clone, body)?;
+    Ok(HttpResponse::Ok().header("ETag", &hash).finish())
+}
+
+// 初始化分片上传
+async fn init_chunk(bucket: String, object_key: String) -> HandlerResponse {
+    let guid = Uuid::new_v4();
+    let upload_id = guid.to_string();
+    let file_size_dir = PathBuf::from(crate::api::DATA_DIR).join("tmp").join(&upload_id);
+    let extension = &format!(".meta.{}", &upload_id);
+    let mut tmp_dir = PathBuf::from(crate::api::DATA_DIR)
+        .join(crate::api::BASIC_PATH_SUFFIX)
+        .join(&bucket)
+        .join(&object_key)
+        .to_string_lossy()
+        .to_string();
+    tmp_dir.push_str(extension);
+    std::fs::create_dir_all(file_size_dir).map_err(|err| anyhow!(err))?;
+    let file_name = Path::new(&object_key)
+        .file_name()
+        .context("解析文件名失败")?
+        .to_string_lossy()
+        .to_string();
+    let file_type = MimeGuess::from_path(Path::new(&file_name))
+        .first_or_text_plain()
+        .to_string();
+    let meta_info = Metadata {
+        name: file_name,
+        size: 0,
+        file_type,
+        time: Default::default(),
+        chunks: vec![],
+    };
+    save_metadata(&tmp_dir, &meta_info)?;
+    let resp = InitiateMultipartUploadResult {
+        bucket,
+        object_key,
+        upload_id,
+    };
+    let xml = to_string(&resp).map_err(|err| anyhow!(err))?;
+    Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
+}
+
+// 完成分片上传
+async fn combine_chunk(
+    bucket_name: &str,
+    object_key: &str,
+    upload_id: &str,
+    cmu: CompleteMultipartUpload,
+) -> HandlerResponse {
+    info!("合并分片，uploadId: {}", upload_id);
+    let mut part_etags = cmu.part_etags;
+
+    let mut check = true;
+    let mut total_len: u64 = 0;
+
+    let extension = &format!(".meta.{}", &upload_id);
+    let mut tmp_metadata_dir = PathBuf::from(crate::api::DATA_DIR)
+        .join(crate::api::BASIC_PATH_SUFFIX)
+        .join(bucket_name)
+        .join(object_key)
+        .to_string_lossy()
+        .to_string();
+    tmp_metadata_dir.push_str(extension);
+    let tmp_metadata_dir = PathBuf::from(tmp_metadata_dir);
+    if !tmp_metadata_dir.as_path().exists() {
+        info!("未初始化");
+        return Err(Anyhow(anyhow!("未初始化".to_string())));
+    }
+
+    for part_etag in &part_etags {
+        if !fs::is_path_exist(&part_etag.etag) {
+            check = false;
+            break;
+        }
+        let len_path = PathBuf::from(crate::api::DATA_DIR)
+            .join("tmp")
+            .join(upload_id)
+            .join(&format!("{}", part_etag.part_number));
+        let len: u64 = std::fs::read_to_string(len_path)
+            .context("读取长度文件失败")?
+            .parse()
+            .context("解析长度文件失败")?;
+        total_len += len;
+    }
+
+    if !check {
+        info!("分片不完整");
+        return Err(Anyhow(anyhow!("分片不完整".to_string())));
+    }
+    part_etags.sort_by_key(|p| p.part_number);
+    let chunks: Vec<String> = part_etags.par_iter().map(|p| p.etag.clone()).collect();
+    let mut metadata = fs::load_metadata(tmp_metadata_dir.to_string_lossy().as_ref())?;
+    info!("读取临时元数据成功");
+    metadata.size = total_len;
+    metadata.chunks = chunks;
+    metadata.time = Utc::now();
+
+    let mut metadata_dir = PathBuf::from(crate::api::DATA_DIR)
+        .join(crate::api::BASIC_PATH_SUFFIX)
+        .join(bucket_name)
+        .join(object_key)
+        .to_string_lossy()
+        .to_string();
+    metadata_dir.push_str(".meta");
+    save_metadata(&metadata_dir, &metadata)?;
+    info!("保存新元数据成功");
+    std::fs::remove_file(tmp_metadata_dir).context("删除临时元数据失败")?;
+    std::fs::remove_dir_all(PathBuf::from(crate::api::DATA_DIR).join("tmp").join(upload_id))
+        .context("删除临时文件夹失败")?;
+
+    let e_tag = cry::encrypt_by_md5(&format!("{}/{}", bucket_name, object_key));
+    let res = CompleteMultipartUploadResult {
+        bucket_name: bucket_name.to_string(),
+        object_key: object_key.to_string(),
+        etag: e_tag,
+    };
+    let xml = to_string(&res).map_err(|err| anyhow!(err))?;
+    Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
+}
+
+
+// 删除文件逻辑
+async fn do_delete_file(metainfo_file_path: String) -> HandlerResponse {
+    if std::fs::metadata(&metainfo_file_path).is_ok() {
+        std::fs::remove_file(&metainfo_file_path).context("删除文件失败")?;
+        return Ok(HttpResponse::Ok().content_type("application/xml").finish());
+    }
+    Ok(HttpResponse::NotFound()
+        .content_type("application/xml")
+        .finish())
 }
 
 #[derive(Debug, Clone)]
