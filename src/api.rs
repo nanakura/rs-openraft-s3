@@ -1,6 +1,6 @@
 use crate::err::AppError;
 use crate::err::AppError::{Anyhow, BadRequest};
-use crate::fs;
+use crate::{fs, HandlerResponse};
 use crate::fs::{save_metadata, split_file_ann_save, Metadata, UncompressStream};
 use crate::model::{
     Bucket, BucketWrapper, CompleteMultipartUpload, CompleteMultipartUploadResult, Content,
@@ -31,7 +31,52 @@ use zstd::zstd_safe::WriteBuf;
 const DATA_DIR: &str = "data";
 const BASIC_PATH_SUFFIX: &str = "buckets";
 
-type HandlerResponse = Result<HttpResponse, AppError>;
+pub fn rest(cfg: &mut web::ServiceConfig) {
+    cfg
+        // 应用日志记录中间件，记录请求和响应。
+        // 定义路由和相应的处理函数。
+        .route("/health", web::get().to(|| async { web::HttpResponse::Ok().body("ok") }))
+        .route("/api", web::get().to(list_bucket))
+        .route("/api/{bucket}", web::get().to(get_bucket))
+        .route("/api/{bucket}", web::head().to(head_bucket))
+        .route("/api/{bucket}", web::put().to(create_bucket))
+        .route("/api/{bucket}", web::delete().to(delete_bucket))
+        .route("/api/{bucket}/", web::get().to(get_bucket))
+        .route("/api/{bucket}/", web::head().to(head_bucket))
+        .route("/api/{bucket}/", web::put().to(create_bucket))
+        .route("/api/{bucket}/", web::delete().to(delete_bucket))
+        .route(
+            "/api/{bucket}/{object}",
+            web::post().to(init_chunk_or_combine_chunk),
+        )
+        .route("/api/{bucket}/{object}", web::head().to(head_object))
+        .route(
+            "/api/{bucket}/{object}",
+            web::put().to(upload_file_or_upload_chunk),
+        )
+        .route("/api/{bucket}/{object}", web::delete().to(delete_file))
+        .route("/api/{bucket}/{object}", web::get().to(download_file))
+        .route(
+            "/api/{bucket}/{object}/{objectSuffix}*",
+            web::post().to(init_chunk_or_combine_chunk_longpath),
+        )
+        .route(
+            "/api/{bucket}/{object}/{objectSuffix}*",
+            web::head().to(head_object_longpath),
+        )
+        .route(
+            "/api/{bucket}/{object}/{objectSuffix}*",
+            web::put().to(upload_file_or_upload_chunk_longpath),
+        )
+        .route(
+            "/api/{bucket}/{object}/{objectSuffix}*",
+            web::delete().to(delete_file_longpath),
+        )
+        .route(
+            "/api/{bucket}/{object}/{objectSuffix}*",
+            web::get().to(download_file_longpath),
+        );
+}
 
 // 从uri path中获取参数
 fn get_path_param(req: &web::HttpRequest, name: &str) -> Result<String, AppError> {
