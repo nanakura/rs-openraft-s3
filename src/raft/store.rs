@@ -1,11 +1,18 @@
+use anyhow::{anyhow, Context};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::io::Cursor;
 use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use anyhow::{anyhow, Context};
 
+use crate::api::{BASIC_PATH_SUFFIX, DATA_DIR};
+use crate::err::AppError::Anyhow;
+use crate::fs::{save_metadata, split_file_ann_save, Metadata};
+use crate::model::{
+    CompleteMultipartUpload, CompleteMultipartUploadResult, InitiateMultipartUploadResult,
+};
+use crate::{fs, HandlerResponse};
 use byteorder::BigEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
@@ -35,7 +42,6 @@ use openraft::StorageIOError;
 use openraft::StoredMembership;
 use openraft::Vote;
 use quick_xml::se::to_string;
-use rayon::iter::IntoParallelRefIterator;
 use rocksdb::ColumnFamily;
 use rocksdb::ColumnFamilyDescriptor;
 use rocksdb::Direction;
@@ -45,11 +51,6 @@ use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use crate::err::AppError::Anyhow;
-use crate::fs::{Metadata, save_metadata, split_file_ann_save};
-use crate::{fs, HandlerResponse};
-use crate::api::{BASIC_PATH_SUFFIX, DATA_DIR};
-use crate::model::{CompleteMultipartUpload, CompleteMultipartUploadResult, InitiateMultipartUploadResult};
 
 use crate::raft::typ;
 use crate::raft::Node;
@@ -67,14 +68,39 @@ use rayon::prelude::*;
  */
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Request {
-    CreateBucket {bucket_name:String},
-    DeleteBucket{bucket_name:String},
-    InitChunk{bucket_name:String, object_key:String},
-    UploadChunk{part_number:String, upload_id:String, body: Vec<u8>},
-    UploadFile{file_path:String, body: Vec<u8>},
-    CombineChunk{bucket_name:String, object_key:String, upload_id:String, cmu: CompleteMultipartUpload},
-    DeleteFile{file_path:String},
-    CopyFile{copy_source: String, dest_bucket: String, dest_object: String}
+    CreateBucket {
+        bucket_name: String,
+    },
+    DeleteBucket {
+        bucket_name: String,
+    },
+    InitChunk {
+        bucket_name: String,
+        object_key: String,
+    },
+    UploadChunk {
+        part_number: String,
+        upload_id: String,
+        body: Vec<u8>,
+    },
+    UploadFile {
+        file_path: String,
+        body: Vec<u8>,
+    },
+    CombineChunk {
+        bucket_name: String,
+        object_key: String,
+        upload_id: String,
+        cmu: CompleteMultipartUpload,
+    },
+    DeleteFile {
+        file_path: String,
+    },
+    CopyFile {
+        copy_source: String,
+        dest_bucket: String,
+        dest_object: String,
+    },
 }
 
 /**
@@ -82,7 +108,6 @@ pub enum Request {
  * In this example it will return a optional value from a given key in
  * the `ExampleRequest.Set`.
  *
- * TODO: Should we explain how to create multiple `AppDataResponse`?
  *
  */
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -264,38 +289,57 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
             match ent.payload {
                 EntryPayload::Blank => {}
                 EntryPayload::Normal(req) => match req {
-                    // TODO
-                    Request::CreateBucket {bucket_name} =>{
-                        std::fs::create_dir_all(bucket_name).context("创建桶失败").unwrap();
-                    },
-                    Request::DeleteBucket {bucket_name} => {
+                    Request::CreateBucket { bucket_name } => {
+                        std::fs::create_dir_all(bucket_name)
+                            .context("创建桶失败")
+                            .unwrap();
+                    }
+                    Request::DeleteBucket { bucket_name } => {
                         if std::fs::metadata(&bucket_name).is_ok() {
-                            std::fs::remove_dir_all(&bucket_name).context("删除桶失败").unwrap();
+                            std::fs::remove_dir_all(&bucket_name)
+                                .context("删除桶失败")
+                                .unwrap();
                         }
-                    },
+                    }
                     // Request::Set { key, value } => {
                     //     resp_value = Some(value.clone());
                     //
                     //     let mut st = self.data.kvs.write().await;
                     //     st.insert(key, value);
                     // }
-                    Request::InitChunk { bucket_name, object_key } => {
-                        init_chunk(bucket_name, object_key).await;
+                    Request::InitChunk {
+                        bucket_name,
+                        object_key,
+                    } => {
+                        let _ = init_chunk(bucket_name, object_key).await;
                     }
-                    Request::UploadChunk { part_number, upload_id, body } => {
-                        upload_chunk(&part_number, &upload_id, body).await;
+                    Request::UploadChunk {
+                        part_number,
+                        upload_id,
+                        body,
+                    } => {
+                        let _ = upload_chunk(&part_number, &upload_id, body).await;
                     }
                     Request::UploadFile { file_path, body } => {
-                        upload_file(file_path, body).await;
+                        let _ = upload_file(file_path, body).await;
                     }
-                    Request::CombineChunk { bucket_name, object_key, upload_id, cmu } => {
-                        combine_chunk(&bucket_name, &object_key, &upload_id, cmu).await;
+                    Request::CombineChunk {
+                        bucket_name,
+                        object_key,
+                        upload_id,
+                        cmu,
+                    } => {
+                        let _ = combine_chunk(&bucket_name, &object_key, &upload_id, cmu).await;
                     }
                     Request::DeleteFile { file_path } => {
-                        do_delete_file(file_path).await;
+                        let _ = do_delete_file(file_path).await;
                     }
-                    Request::CopyFile { copy_source, dest_bucket, dest_object } => {
-                        copy_object(&copy_source, &dest_bucket, &dest_object).await;
+                    Request::CopyFile {
+                        copy_source,
+                        dest_bucket,
+                        dest_object,
+                    } => {
+                        let _ = copy_object(&copy_source, &dest_bucket, &dest_object).await;
                     }
                 },
                 EntryPayload::Membership(mem) => {
@@ -346,8 +390,6 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
         }))
     }
 }
-
-
 
 // 上传文件
 async fn upload_file(metainfo_file_path: String, body: Vec<u8>) -> HandlerResponse {
@@ -441,7 +483,9 @@ pub(crate) async fn upload_chunk(
 async fn init_chunk(bucket: String, object_key: String) -> HandlerResponse {
     let guid = Uuid::new_v4();
     let upload_id = guid.to_string();
-    let file_size_dir = PathBuf::from(crate::api::DATA_DIR).join("tmp").join(&upload_id);
+    let file_size_dir = PathBuf::from(crate::api::DATA_DIR)
+        .join("tmp")
+        .join(&upload_id);
     let extension = &format!(".meta.{}", &upload_id);
     let mut tmp_dir = PathBuf::from(crate::api::DATA_DIR)
         .join(crate::api::BASIC_PATH_SUFFIX)
@@ -541,8 +585,12 @@ async fn combine_chunk(
     save_metadata(&metadata_dir, &metadata)?;
     info!("保存新元数据成功");
     std::fs::remove_file(tmp_metadata_dir).context("删除临时元数据失败")?;
-    std::fs::remove_dir_all(PathBuf::from(crate::api::DATA_DIR).join("tmp").join(upload_id))
-        .context("删除临时文件夹失败")?;
+    std::fs::remove_dir_all(
+        PathBuf::from(crate::api::DATA_DIR)
+            .join("tmp")
+            .join(upload_id),
+    )
+    .context("删除临时文件夹失败")?;
 
     let e_tag = cry::encrypt_by_md5(&format!("{}/{}", bucket_name, object_key));
     let res = CompleteMultipartUploadResult {
@@ -553,7 +601,6 @@ async fn combine_chunk(
     let xml = to_string(&res).map_err(|err| anyhow!(err))?;
     Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
 }
-
 
 // 删除文件逻辑
 async fn do_delete_file(metainfo_file_path: String) -> HandlerResponse {

@@ -1,9 +1,8 @@
-
 #[cfg(test)]
 mod test {
     use quick_xml::se::to_string;
-    use serde::{Deserialize, Serialize};
     use rs_s3_local::model::{Bucket, BucketWrapper, ListBucketResp, Owner};
+    use serde::{Deserialize, Serialize};
 
     #[test]
     fn test1() {

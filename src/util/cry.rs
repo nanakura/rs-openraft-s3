@@ -90,4 +90,3 @@ pub fn do_bytes_to_hex(bytes: &[u8]) -> String {
 //     let string = String::from_utf8(bytes)?;
 //     Ok(string)
 // }
-

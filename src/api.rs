@@ -1,9 +1,14 @@
 use crate::err::AppError;
-use crate::err::AppError::{BadRequest};
-use crate::fs::{UncompressStream};
+use crate::err::AppError::BadRequest;
+use crate::fs::UncompressStream;
 use crate::model::{
-    Bucket, BucketWrapper, CompleteMultipartUpload, Content,
-    HeadNotFoundResp, ListBucketResp, ListBucketResult, Owner,
+    Bucket, BucketWrapper, CompleteMultipartUpload, Content, HeadNotFoundResp, ListBucketResp,
+    ListBucketResult, Owner,
+};
+use crate::raft::app::App;
+use crate::raft::store::Request::{
+    CombineChunk, CopyFile, CreateBucket, DeleteBucket, DeleteFile, InitChunk, UploadChunk,
+    UploadFile,
 };
 use crate::util::date::date_format_to_second;
 use crate::{fs, HandlerResponse};
@@ -20,10 +25,8 @@ use quick_xml::se::to_string;
 use rayon::prelude::*;
 use serde::Deserialize;
 use std::fs::read_dir;
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use zstd::zstd_safe::WriteBuf;
-use crate::raft::app::App;
-use crate::raft::store::Request::{CombineChunk, CopyFile, CreateBucket, DeleteBucket, DeleteFile, InitChunk, UploadChunk, UploadFile};
 
 pub(crate) const DATA_DIR: &str = "data";
 pub(crate) const BASIC_PATH_SUFFIX: &str = "buckets";
@@ -131,7 +134,6 @@ pub async fn list_bucket() -> HandlerResponse {
     }
 }
 
-
 #[derive(Deserialize)]
 pub struct GetBucketQueryParams {
     pub prefix: Option<String>,
@@ -196,24 +198,37 @@ pub async fn head_bucket(req: web::HttpRequest) -> HandlerResponse {
 }
 
 // 创建桶
-pub async fn create_bucket(req: web::HttpRequest, state: web::types::State<App>) -> HandlerResponse {
+pub async fn create_bucket(
+    req: web::HttpRequest,
+    state: web::types::State<App>,
+) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name);
-    let res = state.raft.client_write(CreateBucket {bucket_name: file_path.to_string_lossy().to_string()});
+    let _ = state.raft.client_write(CreateBucket {
+        bucket_name: file_path.to_string_lossy().to_string(),
+    });
     //std::fs::create_dir_all(file_path).context("创建桶失败")?;
     Ok(HttpResponse::Ok().finish())
 }
 
 // 删除桶
-pub async fn delete_bucket(req: web::HttpRequest, state: web::types::State<App>) -> HandlerResponse {
+pub async fn delete_bucket(
+    req: web::HttpRequest,
+    state: web::types::State<App>,
+) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name);
 
-    let res = state.raft.client_write(DeleteBucket {bucket_name: file_path.to_string_lossy().to_string()}).await;
+    let _ = state
+        .raft
+        .client_write(DeleteBucket {
+            bucket_name: file_path.to_string_lossy().to_string(),
+        })
+        .await;
 
     Ok(HttpResponse::Ok().finish())
     // if std::fs::metadata(&file_path).is_ok() {
@@ -237,7 +252,7 @@ pub async fn init_chunk_or_combine_chunk(
     req: web::HttpRequest,
     mut body: web::types::Payload,
     Query(query): Query<InitChunkOrCombineQuery>,
-    state: web::types::State<App>
+    state: web::types::State<App>,
 ) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
@@ -250,17 +265,26 @@ pub async fn init_chunk_or_combine_chunk(
         let body = std::str::from_utf8(bytes.as_slice()).map_err(|err| anyhow!(err))?;
         let cmu: CompleteMultipartUpload =
             quick_xml::de::from_str(body).map_err(|err| anyhow!(err))?;
-        let res= state.raft.client_write(CombineChunk {
-            bucket_name,
-            object_key: object_name,
-            upload_id,
-            cmu,
-        }).await;
+        let _ = state
+            .raft
+            .client_write(CombineChunk {
+                bucket_name,
+                object_key: object_name,
+                upload_id,
+                cmu,
+            })
+            .await;
 
         Ok(HttpResponse::Ok().finish())
         //combine_chunk(&bucket_name, &object_name, &upload_id, cmu).await
     } else {
-        let res = state.raft.client_write(InitChunk { bucket_name, object_key: object_name }).await;
+        let _ = state
+            .raft
+            .client_write(InitChunk {
+                bucket_name,
+                object_key: object_name,
+            })
+            .await;
         Ok(HttpResponse::Ok().finish())
         //init_chunk(bucket_name, object_name).await
     }
@@ -271,11 +295,15 @@ pub async fn init_chunk_or_combine_chunk_longpath(
     req: web::HttpRequest,
     mut body: web::types::Payload,
     Query(query): Query<InitChunkOrCombineQuery>,
-    state: web::types::State<App>
+    state: web::types::State<App>,
 ) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
     let object_suffix: String = get_path_param(&req, "objectSuffix")?;
+    let object_key = PathBuf::from(&object_name)
+        .join(&object_suffix)
+        .to_string_lossy()
+        .to_string();
     if let Some(upload_id) = query.upload_id {
         info!("uploadId: {}", upload_id);
         let mut bytes = BytesMut::new();
@@ -287,20 +315,25 @@ pub async fn init_chunk_or_combine_chunk_longpath(
 
         let cmu: CompleteMultipartUpload =
             quick_xml::de::from_str(body).map_err(|err| anyhow!(err))?;
-        let object_key = PathBuf::from(&object_name)
-            .join(&object_suffix)
-            .to_string_lossy()
-            .to_string();
-        let res= state.raft.client_write(CombineChunk {
-            bucket_name,
-            object_key: object_name,
-            upload_id,
-            cmu,
-        }).await;
+        let _ = state
+            .raft
+            .client_write(CombineChunk {
+                bucket_name,
+                object_key,
+                upload_id,
+                cmu,
+            })
+            .await;
         Ok(HttpResponse::Ok().finish())
         //combine_chunk(&bucket_name, &object_key, &upload_id, cmu).await
     } else {
-        let res = state.raft.client_write(InitChunk { bucket_name, object_key: object_name }).await;
+        let _ = state
+            .raft
+            .client_write(InitChunk {
+                bucket_name,
+                object_key,
+            })
+            .await;
         // init_chunk(
         //     bucket_name,
         //     PathBuf::from(object_name)
@@ -313,7 +346,6 @@ pub async fn init_chunk_or_combine_chunk_longpath(
         Ok(HttpResponse::Ok().finish())
     }
 }
-
 
 // 查询对象信息
 pub async fn head_object(req: web::HttpRequest) -> HandlerResponse {
@@ -340,7 +372,7 @@ pub async fn upload_file_or_upload_chunk(
     req: web::HttpRequest,
     mut body: web::types::Payload,
     Query(query): Query<UploadFileOrChunkQuery>,
-    state: web::types::State<App>
+    state: web::types::State<App>,
 ) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
@@ -356,21 +388,27 @@ pub async fn upload_file_or_upload_chunk(
                 let item = item.map_err(|err| anyhow!(err.to_string()))?;
                 bytes.extend_from_slice(&item);
             }
-            let res = state.raft.client_write(UploadChunk {
-                part_number,
-                upload_id,
-                body: bytes.to_vec(),
-            }).await;
+            let _ = state
+                .raft
+                .client_write(UploadChunk {
+                    part_number,
+                    upload_id,
+                    body: bytes.to_vec(),
+                })
+                .await;
             //upload_chunk(&bucket_name, &object_name, &part_number, &upload_id, body).await
             Ok(HttpResponse::Ok().finish())
         }
         _ => {
             if let Some(copy_source) = req.headers().get("x-amz-copy-source") {
-                let res = state.raft.client_write(CopyFile {
-                    copy_source: copy_source.to_str().unwrap().to_string(),
-                    dest_bucket: bucket_name,
-                    dest_object: object_name,
-                }).await;
+                let _ = state
+                    .raft
+                    .client_write(CopyFile {
+                        copy_source: copy_source.to_str().unwrap().to_string(),
+                        dest_bucket: bucket_name,
+                        dest_object: object_name,
+                    })
+                    .await;
                 // copy_object(
                 //     copy_source.to_str().map_err(|_| BadRequest)?,
                 //     &bucket_name,
@@ -388,10 +426,13 @@ pub async fn upload_file_or_upload_chunk(
 
                 let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
                 metainfo_file_path.push_str(".meta");
-                state.raft.client_write(UploadFile {
-                    file_path: metainfo_file_path,
-                    body: bytes.to_vec(),
-                }).await;
+                let _ = state
+                    .raft
+                    .client_write(UploadFile {
+                        file_path: metainfo_file_path,
+                        body: bytes.to_vec(),
+                    })
+                    .await;
                 //upload_file(file_path, body).await
                 Ok(HttpResponse::Ok().finish())
             }
@@ -399,12 +440,8 @@ pub async fn upload_file_or_upload_chunk(
     }
 }
 
-
 // 删除文件
-pub async fn delete_file(
-    req: web::HttpRequest,
-                         state: web::types::State<App>
-) -> HandlerResponse {
+pub async fn delete_file(req: web::HttpRequest, state: web::types::State<App>) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
     let file_path = PathBuf::from(DATA_DIR)
@@ -413,13 +450,15 @@ pub async fn delete_file(
         .join(object_name);
     let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
     metainfo_file_path.push_str(".meta");
-    let res = state.raft.client_write(
-        DeleteFile {file_path: metainfo_file_path }).await;
+    let _ = state
+        .raft
+        .client_write(DeleteFile {
+            file_path: metainfo_file_path,
+        })
+        .await;
     //do_delete_file(file_path).await
     Ok(HttpResponse::Ok().finish())
 }
-
-
 
 // 长路径获取对象信息
 pub async fn head_object_longpath(req: web::HttpRequest) -> HandlerResponse {
@@ -469,7 +508,7 @@ pub async fn upload_file_or_upload_chunk_longpath(
     req: web::HttpRequest,
     mut body: web::types::Payload,
     Query(query): Query<UploadFileOrChunkQuery>,
-    state: web::types::State<App>
+    state: web::types::State<App>,
 ) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
@@ -492,21 +531,27 @@ pub async fn upload_file_or_upload_chunk_longpath(
                 let item = item.map_err(|err| anyhow!(err.to_string()))?;
                 bytes.extend_from_slice(&item);
             }
-            let res = state.raft.client_write(UploadChunk {
-                part_number,
-                upload_id,
-                body: bytes.to_vec(),
-            }).await;
+            let _ = state
+                .raft
+                .client_write(UploadChunk {
+                    part_number,
+                    upload_id,
+                    body: bytes.to_vec(),
+                })
+                .await;
             //upload_chunk(&bucket_name, &object_key, &part_number, &upload_id, body).await
             Ok(HttpResponse::Ok().finish())
         }
         _ => {
             if let Some(copy_source) = req.headers().get("x-amz-copy-source") {
-                state.raft.client_write(CopyFile {
-                    copy_source: copy_source.to_str().unwrap().to_string(),
-                    dest_bucket: bucket_name,
-                    dest_object: object_name,
-                }).await;
+                let _ = state
+                    .raft
+                    .client_write(CopyFile {
+                        copy_source: copy_source.to_str().unwrap().to_string(),
+                        dest_bucket: bucket_name,
+                        dest_object: object_key,
+                    })
+                    .await;
                 // copy_object(
                 //     copy_source.to_str().map_err(|_| BadRequest)?,
                 //     &bucket_name,
@@ -523,10 +568,13 @@ pub async fn upload_file_or_upload_chunk_longpath(
                 }
                 let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
                 metainfo_file_path.push_str(".meta");
-                state.raft.client_write(UploadFile {
-                    file_path: metainfo_file_path,
-                    body: bytes.to_vec(),
-                }).await;
+                let _ = state
+                    .raft
+                    .client_write(UploadFile {
+                        file_path: metainfo_file_path,
+                        body: bytes.to_vec(),
+                    })
+                    .await;
                 //upload_file(file_path, body).await
                 Ok(HttpResponse::Ok().finish())
             }
@@ -535,8 +583,9 @@ pub async fn upload_file_or_upload_chunk_longpath(
 }
 
 // 长路径删除文件
-pub async fn delete_file_longpath(req: web::HttpRequest,
-                                  state: web::types::State<App>
+pub async fn delete_file_longpath(
+    req: web::HttpRequest,
+    state: web::types::State<App>,
 ) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
@@ -546,7 +595,12 @@ pub async fn delete_file_longpath(req: web::HttpRequest,
         .join(bucket_name)
         .join(object_name)
         .join(object_suffix);
-    state.raft.client_write(DeleteFile {file_path: file_path.to_string_lossy().to_string()}).await;
+    let _ = state
+        .raft
+        .client_write(DeleteFile {
+            file_path: file_path.to_string_lossy().to_string(),
+        })
+        .await;
     //do_delete_file(file_path).await
     Ok(HttpResponse::Ok().finish())
 }

@@ -134,6 +134,7 @@ pub struct Owner {
 }
 
 // 桶列表请求结果
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListBucketResp {
     #[serde(rename = "Id")]

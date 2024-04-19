@@ -8,7 +8,7 @@ use openraft::error::RemoteError;
 use openraft::error::Unreachable;
 use openraft::RaftMetrics;
 use openraft::TryAsRef;
-use reqwest::{Client};
+use reqwest::Client;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
@@ -35,7 +35,7 @@ enum Method {
     GET,
     POST,
     PUT,
-    DELETE
+    DELETE,
 }
 
 impl ExampleClient {
@@ -60,16 +60,16 @@ impl ExampleClient {
         &self,
         req: &Request,
     ) -> Result<typ::ClientWriteResponse, typ::RPCError<typ::ClientWriteError>> {
-        
-        self.send_rpc_to_leader("api/write", Some(req), Method::PUT).await
+        self.send_rpc_to_leader("api/write", Some(req), Method::PUT)
+            .await
     }
 
     pub async fn delete_bucket(
         &self,
         req: &Request,
     ) -> Result<typ::ClientWriteResponse, typ::RPCError<typ::ClientWriteError>> {
-
-        self.send_rpc_to_leader("api/write", Some(req), Method::DELETE).await
+        self.send_rpc_to_leader("api/write", Some(req), Method::DELETE)
+            .await
     }
 
     // --- Cluster management API
@@ -129,7 +129,7 @@ impl ExampleClient {
         &self,
         uri: &str,
         req: Option<&Req>,
-        method: Method
+        method: Method,
     ) -> Result<Resp, RPCError<NodeId, Node, Err>>
     where
         Req: Serialize + 'static,
@@ -188,7 +188,7 @@ impl ExampleClient {
         &self,
         uri: &str,
         req: Option<&Req>,
-        method: Method
+        method: Method,
     ) -> Result<Resp, typ::RPCError<Err>>
     where
         Req: Serialize + 'static,
@@ -203,7 +203,8 @@ impl ExampleClient {
         let mut n_retry = 3;
 
         loop {
-            let res: Result<Resp, typ::RPCError<Err>> = self.do_send_rpc_to_leader(uri, req, method).await;
+            let res: Result<Resp, typ::RPCError<Err>> =
+                self.do_send_rpc_to_leader(uri, req, method).await;
 
             let rpc_err = match res {
                 Ok(x) => return Ok(x),

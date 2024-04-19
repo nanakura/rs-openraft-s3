@@ -36,6 +36,10 @@ where
         req: web::WebRequest<Err>,
         ctx: ServiceCtx<'_, Self>,
     ) -> Result<Self::Response, Self::Error> {
+        if !req.uri().to_string().starts_with("/api") {
+            let res = ctx.call(&self.service, req).await?;
+            return Ok(res)
+        }
         // do filter here
         let access_key_id = "minioadmin";
         let secret_access_key = "minioadmin";

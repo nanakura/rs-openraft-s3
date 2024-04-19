@@ -20,16 +20,16 @@ use crate::raft::NodeId;
 pub fn rest(cfg: &mut web::ServiceConfig) {
     cfg
         .route(
-            "/health",
-            web::get().to(|| async { web::HttpResponse::Ok().body("ok") }),
-        )
-        .route("/cluster/add-learner", web::post().to(add_learner))
-        .route(
-            "/cluster/change-membership",
-            web::post().to(change_membership),
-        )
-        .route("/cluster/init", web::post().to(init))
-        .route("/cluster/metrics", web::get().to(metrics));
+        "/health",
+        web::get().to(|| async { web::HttpResponse::Ok().body("ok") }),
+    )
+    .route("/cluster/add-learner", web::post().to(add_learner))
+    .route(
+        "/cluster/change-membership",
+        web::post().to(change_membership),
+    )
+    .route("/cluster/init", web::post().to(init))
+    .route("/cluster/metrics", web::get().to(metrics));
 }
 
 /// Add a node as **Learner**.

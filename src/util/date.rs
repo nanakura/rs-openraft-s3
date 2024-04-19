@@ -6,4 +6,3 @@ pub fn date_format_to_second(date: DateTime<Utc>) -> String {
     let tag = date.format(df).to_string();
     tag
 }
-

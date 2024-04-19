@@ -88,10 +88,10 @@ where
         web::App::new()
             .state(app)
             .wrap(ntex::web::middleware::Logger::default())
-            .configure(management::rest)
             .wrap(Cors::default())
             // 应用 AWS 签名版本 4 的认证中间件。
             .wrap(CredentialsV4)
+            .configure(management::rest)
             .configure(api::rest)
     })
     .bind(http_addr)
