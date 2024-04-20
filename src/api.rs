@@ -1,10 +1,7 @@
 use crate::err::AppError;
 use crate::err::AppError::BadRequest;
 use crate::fs::UncompressStream;
-use crate::model::{
-    Bucket, BucketWrapper, CompleteMultipartUpload, Content, HeadNotFoundResp, ListBucketResp,
-    ListBucketResult, Owner,
-};
+use crate::model::{Bucket, BucketWrapper, CompleteMultipartUploadResult, Content, HeadNotFoundResp, InitiateMultipartUploadResult, ListBucketResp, ListBucketResult, Owner};
 use crate::raft::app::App;
 use crate::raft::store::Request::{
     CombineChunk, CopyFile, CreateBucket, DeleteBucket, DeleteFile, InitChunk, UploadChunk,
@@ -27,6 +24,7 @@ use serde::Deserialize;
 use std::fs::read_dir;
 use std::path::PathBuf;
 use zstd::zstd_safe::WriteBuf;
+use crate::util::cry;
 
 pub(crate) const DATA_DIR: &str = "data";
 pub(crate) const BASIC_PATH_SUFFIX: &str = "buckets";
@@ -36,6 +34,7 @@ pub fn rest(cfg: &mut web::ServiceConfig) {
         // 应用日志记录中间件，记录请求和响应。
         // 定义路由和相应的处理函数。
         .route("/api", web::get().to(list_bucket))
+        .route("/api/", web::get().to(list_bucket))
         .route("/api/{bucket}", web::get().to(get_bucket))
         .route("/api/{bucket}", web::head().to(head_bucket))
         .route("/api/{bucket}", web::put().to(create_bucket))
@@ -206,9 +205,10 @@ pub async fn create_bucket(
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name);
-    let _ = state.raft.client_write(CreateBucket {
+    state.raft.client_write(CreateBucket {
         bucket_name: file_path.to_string_lossy().to_string(),
-    });
+    }).await
+        .map_err(|err| anyhow!(err.to_string()))?;
     //std::fs::create_dir_all(file_path).context("创建桶失败")?;
     Ok(HttpResponse::Ok().finish())
 }
@@ -223,12 +223,13 @@ pub async fn delete_bucket(
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name);
 
-    let _ = state
+    state
         .raft
         .client_write(DeleteBucket {
             bucket_name: file_path.to_string_lossy().to_string(),
         })
-        .await;
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?;
 
     Ok(HttpResponse::Ok().finish())
     // if std::fs::metadata(&file_path).is_ok() {
@@ -263,29 +264,42 @@ pub async fn init_chunk_or_combine_chunk(
             bytes.extend_from_slice(&item);
         }
         let body = std::str::from_utf8(bytes.as_slice()).map_err(|err| anyhow!(err))?;
-        let cmu: CompleteMultipartUpload =
-            quick_xml::de::from_str(body).map_err(|err| anyhow!(err))?;
-        let _ = state
+        state
             .raft
             .client_write(CombineChunk {
-                bucket_name,
-                object_key: object_name,
-                upload_id,
-                cmu,
+                bucket_name: bucket_name.clone(),
+                object_key: object_name.clone(),
+                upload_id: upload_id.clone(),
+                cmu:body.to_string(),
             })
-            .await;
+            .await
+            .map_err(|err| anyhow!(err.to_string()))?;
 
-        Ok(HttpResponse::Ok().finish())
+        let resp = InitiateMultipartUploadResult {
+            bucket: bucket_name,
+            object_key: object_name,
+            upload_id,
+        };
+        let xml = to_string(&resp).map_err(|err| anyhow!(err))?;
+        Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
         //combine_chunk(&bucket_name, &object_name, &upload_id, cmu).await
     } else {
-        let _ = state
+        state
             .raft
             .client_write(InitChunk {
-                bucket_name,
-                object_key: object_name,
+                bucket_name: bucket_name.clone(),
+                object_key: object_name.clone(),
             })
-            .await;
-        Ok(HttpResponse::Ok().finish())
+            .await
+            .map_err(|err| anyhow!(err.to_string()))?;
+        let e_tag = cry::encrypt_by_md5(&format!("{}/{}", &bucket_name, &object_name));
+        let res = CompleteMultipartUploadResult {
+            bucket_name: bucket_name.to_string(),
+            object_key: object_name.to_string(),
+            etag: e_tag,
+        };
+        let xml = to_string(&res).map_err(|err| anyhow!(err))?;
+        Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
         //init_chunk(bucket_name, object_name).await
     }
 }
@@ -312,28 +326,33 @@ pub async fn init_chunk_or_combine_chunk_longpath(
             bytes.extend_from_slice(&item);
         }
         let body = std::str::from_utf8(bytes.as_slice()).map_err(|err| anyhow!(err))?;
-
-        let cmu: CompleteMultipartUpload =
-            quick_xml::de::from_str(body).map_err(|err| anyhow!(err))?;
-        let _ = state
+        state
             .raft
             .client_write(CombineChunk {
-                bucket_name,
-                object_key,
-                upload_id,
-                cmu,
+                bucket_name: bucket_name.clone(),
+                object_key: object_key.clone(),
+                upload_id: upload_id.clone(),
+                cmu: body.to_string(),
             })
-            .await;
-        Ok(HttpResponse::Ok().finish())
+            .await
+            .map_err(|err| anyhow!(err.to_string()))?;
+        let resp = InitiateMultipartUploadResult {
+            bucket: bucket_name,
+            object_key,
+            upload_id,
+        };
+        let xml = to_string(&resp).map_err(|err| anyhow!(err))?;
+        Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
         //combine_chunk(&bucket_name, &object_key, &upload_id, cmu).await
     } else {
-        let _ = state
+        state
             .raft
             .client_write(InitChunk {
-                bucket_name,
-                object_key,
+                bucket_name: bucket_name.clone(),
+                object_key: object_key.clone(),
             })
-            .await;
+            .await
+            .map_err(|err| anyhow!(err.to_string()))?;
         // init_chunk(
         //     bucket_name,
         //     PathBuf::from(object_name)
@@ -343,7 +362,14 @@ pub async fn init_chunk_or_combine_chunk_longpath(
         // )
         // .await
 
-        Ok(HttpResponse::Ok().finish())
+        let e_tag = cry::encrypt_by_md5(&format!("{}/{}", &bucket_name, &object_key));
+        let res = CompleteMultipartUploadResult {
+            bucket_name: bucket_name.to_string(),
+            object_key: object_key.to_string(),
+            etag: e_tag,
+        };
+        let xml = to_string(&res).map_err(|err| anyhow!(err))?;
+        Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
     }
 }
 
@@ -388,27 +414,31 @@ pub async fn upload_file_or_upload_chunk(
                 let item = item.map_err(|err| anyhow!(err.to_string()))?;
                 bytes.extend_from_slice(&item);
             }
-            let _ = state
+            let hash = fs::sum_sha256(&bytes).await;
+            state
                 .raft
                 .client_write(UploadChunk {
                     part_number,
                     upload_id,
+                    hash: hash.clone(),
                     body: bytes.to_vec(),
                 })
-                .await;
+                .await
+                .map_err(|err| anyhow!(err.to_string()))?;
             //upload_chunk(&bucket_name, &object_name, &part_number, &upload_id, body).await
-            Ok(HttpResponse::Ok().finish())
+            Ok(HttpResponse::Ok().header("ETag", &hash).finish())
         }
         _ => {
             if let Some(copy_source) = req.headers().get("x-amz-copy-source") {
-                let _ = state
+                state
                     .raft
                     .client_write(CopyFile {
                         copy_source: copy_source.to_str().unwrap().to_string(),
                         dest_bucket: bucket_name,
                         dest_object: object_name,
                     })
-                    .await;
+                    .await
+                    .map_err(|err| anyhow!(err.to_string()))?;
                 // copy_object(
                 //     copy_source.to_str().map_err(|_| BadRequest)?,
                 //     &bucket_name,
@@ -426,13 +456,14 @@ pub async fn upload_file_or_upload_chunk(
 
                 let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
                 metainfo_file_path.push_str(".meta");
-                let _ = state
+                state
                     .raft
                     .client_write(UploadFile {
                         file_path: metainfo_file_path,
                         body: bytes.to_vec(),
                     })
-                    .await;
+                    .await
+                    .map_err(|err| anyhow!(err.to_string()))?;
                 //upload_file(file_path, body).await
                 Ok(HttpResponse::Ok().finish())
             }
@@ -450,12 +481,13 @@ pub async fn delete_file(req: web::HttpRequest, state: web::types::State<App>) -
         .join(object_name);
     let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
     metainfo_file_path.push_str(".meta");
-    let _ = state
+    state
         .raft
         .client_write(DeleteFile {
             file_path: metainfo_file_path,
         })
-        .await;
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?;
     //do_delete_file(file_path).await
     Ok(HttpResponse::Ok().finish())
 }
@@ -531,27 +563,31 @@ pub async fn upload_file_or_upload_chunk_longpath(
                 let item = item.map_err(|err| anyhow!(err.to_string()))?;
                 bytes.extend_from_slice(&item);
             }
-            let _ = state
+            let hash = fs::sum_sha256(&bytes).await;
+            state
                 .raft
                 .client_write(UploadChunk {
                     part_number,
                     upload_id,
+                    hash: hash.clone(),
                     body: bytes.to_vec(),
                 })
-                .await;
+                .await
+                .map_err(|err| anyhow!(err.to_string()))?;
             //upload_chunk(&bucket_name, &object_key, &part_number, &upload_id, body).await
-            Ok(HttpResponse::Ok().finish())
+            Ok(HttpResponse::Ok().header("ETag", &hash).finish())
         }
         _ => {
             if let Some(copy_source) = req.headers().get("x-amz-copy-source") {
-                let _ = state
+                state
                     .raft
                     .client_write(CopyFile {
                         copy_source: copy_source.to_str().unwrap().to_string(),
                         dest_bucket: bucket_name,
                         dest_object: object_key,
                     })
-                    .await;
+                    .await
+                    .map_err(|err| anyhow!(err.to_string()))?;
                 // copy_object(
                 //     copy_source.to_str().map_err(|_| BadRequest)?,
                 //     &bucket_name,
@@ -568,13 +604,14 @@ pub async fn upload_file_or_upload_chunk_longpath(
                 }
                 let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
                 metainfo_file_path.push_str(".meta");
-                let _ = state
+                state
                     .raft
                     .client_write(UploadFile {
                         file_path: metainfo_file_path,
                         body: bytes.to_vec(),
                     })
-                    .await;
+                    .await
+                    .map_err(|err| anyhow!(err.to_string()))?;
                 //upload_file(file_path, body).await
                 Ok(HttpResponse::Ok().finish())
             }
@@ -595,12 +632,13 @@ pub async fn delete_file_longpath(
         .join(bucket_name)
         .join(object_name)
         .join(object_suffix);
-    let _ = state
+    state
         .raft
         .client_write(DeleteFile {
             file_path: file_path.to_string_lossy().to_string(),
         })
-        .await;
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?;
     //do_delete_file(file_path).await
     Ok(HttpResponse::Ok().finish())
 }

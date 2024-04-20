@@ -7,12 +7,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::api::{BASIC_PATH_SUFFIX, DATA_DIR};
-use crate::err::AppError::Anyhow;
 use crate::fs::{save_metadata, split_file_ann_save, Metadata};
 use crate::model::{
-    CompleteMultipartUpload, CompleteMultipartUploadResult, InitiateMultipartUploadResult,
+    CompleteMultipartUpload,
 };
-use crate::{fs, HandlerResponse};
+use crate::{fs};
 use byteorder::BigEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
@@ -20,8 +19,6 @@ use chrono::Utc;
 use futures::StreamExt;
 use log::{debug, info};
 use mime_guess::MimeGuess;
-use ntex::web;
-use ntex::web::HttpResponse;
 use openraft::storage::LogFlushed;
 use openraft::storage::LogState;
 use openraft::storage::RaftLogStorage;
@@ -41,7 +38,6 @@ use openraft::StorageError;
 use openraft::StorageIOError;
 use openraft::StoredMembership;
 use openraft::Vote;
-use quick_xml::se::to_string;
 use rocksdb::ColumnFamily;
 use rocksdb::ColumnFamilyDescriptor;
 use rocksdb::Direction;
@@ -57,7 +53,6 @@ use crate::raft::Node;
 use crate::raft::NodeId;
 use crate::raft::SnapshotData;
 use crate::raft::TypeConfig;
-use crate::util::cry;
 use rayon::prelude::*;
 
 /**
@@ -81,6 +76,7 @@ pub enum Request {
     UploadChunk {
         part_number: String,
         upload_id: String,
+        hash: String,
         body: Vec<u8>,
     },
     UploadFile {
@@ -91,7 +87,7 @@ pub enum Request {
         bucket_name: String,
         object_key: String,
         upload_id: String,
-        cmu: CompleteMultipartUpload,
+        cmu: String,
     },
     DeleteFile {
         file_path: String,
@@ -316,9 +312,10 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
                     Request::UploadChunk {
                         part_number,
                         upload_id,
+                        hash,
                         body,
                     } => {
-                        let _ = upload_chunk(&part_number, &upload_id, body).await;
+                        let _ = upload_chunk(&part_number, &upload_id, &hash, body).await;
                     }
                     Request::UploadFile { file_path, body } => {
                         let _ = upload_file(file_path, body).await;
@@ -329,6 +326,8 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
                         upload_id,
                         cmu,
                     } => {
+                        let cmu: CompleteMultipartUpload =
+                            quick_xml::de::from_str(&cmu).unwrap();
                         let _ = combine_chunk(&bucket_name, &object_key, &upload_id, cmu).await;
                     }
                     Request::DeleteFile { file_path } => {
@@ -392,7 +391,7 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
 }
 
 // 上传文件
-async fn upload_file(metainfo_file_path: String, body: Vec<u8>) -> HandlerResponse {
+async fn upload_file(metainfo_file_path: String, body: Vec<u8>) -> anyhow::Result<()> {
     let file_name = PathBuf::from(&metainfo_file_path)
         .file_name()
         .context("解析文件名失败")?
@@ -412,13 +411,11 @@ async fn upload_file(metainfo_file_path: String, body: Vec<u8>) -> HandlerRespon
         chunks: hashcodes,
     };
     fs::save_metadata(&metainfo_file_path, &metainfo)?;
-    Ok(web::HttpResponse::Ok()
-        .content_type("application/xml")
-        .finish())
+    Ok(())
 }
 
 // 桶间拷贝对象数据
-async fn copy_object(copy_source: &str, dest_bucket: &str, dest_object: &str) -> HandlerResponse {
+async fn copy_object(copy_source: &str, dest_bucket: &str, dest_object: &str) -> anyhow::Result<()> {
     let mut copy_source = copy_source.to_string();
     if copy_source.contains('?') {
         copy_source = copy_source.split('?').next().unwrap().to_string();
@@ -451,21 +448,21 @@ async fn copy_object(copy_source: &str, dest_bucket: &str, dest_object: &str) ->
         .join(dest_object);
     std::fs::copy(src_metadata_path, dest_metadata_path).map_err(|err| anyhow!(err))?;
 
-    Ok(HttpResponse::Ok().finish())
+    Ok(())
 }
 
 // 上传分片
 pub(crate) async fn upload_chunk(
     part_number: &str,
     upload_id: &str,
+    hash: &str,
     body: Vec<u8>,
-) -> HandlerResponse {
-    let hash = fs::sum_sha256(&body).await;
+) -> anyhow::Result<()> {
     let path = fs::path_from_hash(&hash);
     if fs::is_path_exist(&path.to_string_lossy().to_string()) {
-        return Ok(HttpResponse::Ok().header("ETag", &hash).body(&hash));
+        return Ok(());
     }
-    let hash_clone = hash.clone();
+    let hash_clone = hash;
     let len = body.len();
     let part_path = PathBuf::from(DATA_DIR)
         .join("tmp")
@@ -476,11 +473,11 @@ pub(crate) async fn upload_chunk(
         .map_err(|err| anyhow!(err.to_string()))?;
     let body = fs::compress_chunk(std::io::Cursor::new(&body))?;
     fs::save_file(&hash_clone, body)?;
-    Ok(HttpResponse::Ok().header("ETag", &hash).finish())
+    Ok(())
 }
 
 // 初始化分片上传
-async fn init_chunk(bucket: String, object_key: String) -> HandlerResponse {
+async fn init_chunk(bucket: String, object_key: String) -> anyhow::Result<()> {
     let guid = Uuid::new_v4();
     let upload_id = guid.to_string();
     let file_size_dir = PathBuf::from(crate::api::DATA_DIR)
@@ -511,13 +508,7 @@ async fn init_chunk(bucket: String, object_key: String) -> HandlerResponse {
         chunks: vec![],
     };
     save_metadata(&tmp_dir, &meta_info)?;
-    let resp = InitiateMultipartUploadResult {
-        bucket,
-        object_key,
-        upload_id,
-    };
-    let xml = to_string(&resp).map_err(|err| anyhow!(err))?;
-    Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
+    Ok(())
 }
 
 // 完成分片上传
@@ -526,7 +517,7 @@ async fn combine_chunk(
     object_key: &str,
     upload_id: &str,
     cmu: CompleteMultipartUpload,
-) -> HandlerResponse {
+) -> anyhow::Result<()> {
     info!("合并分片，uploadId: {}", upload_id);
     let mut part_etags = cmu.part_etags;
 
@@ -544,7 +535,7 @@ async fn combine_chunk(
     let tmp_metadata_dir = PathBuf::from(tmp_metadata_dir);
     if !tmp_metadata_dir.as_path().exists() {
         info!("未初始化");
-        return Err(Anyhow(anyhow!("未初始化".to_string())));
+        return Err(anyhow!("未初始化".to_string()));
     }
 
     for part_etag in &part_etags {
@@ -565,7 +556,7 @@ async fn combine_chunk(
 
     if !check {
         info!("分片不完整");
-        return Err(Anyhow(anyhow!("分片不完整".to_string())));
+        return Err(anyhow!("分片不完整".to_string()));
     }
     part_etags.sort_by_key(|p| p.part_number);
     let chunks: Vec<String> = part_etags.par_iter().map(|p| p.etag.clone()).collect();
@@ -591,26 +582,15 @@ async fn combine_chunk(
             .join(upload_id),
     )
     .context("删除临时文件夹失败")?;
-
-    let e_tag = cry::encrypt_by_md5(&format!("{}/{}", bucket_name, object_key));
-    let res = CompleteMultipartUploadResult {
-        bucket_name: bucket_name.to_string(),
-        object_key: object_key.to_string(),
-        etag: e_tag,
-    };
-    let xml = to_string(&res).map_err(|err| anyhow!(err))?;
-    Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
+    Ok(())
 }
 
 // 删除文件逻辑
-async fn do_delete_file(metainfo_file_path: String) -> HandlerResponse {
+async fn do_delete_file(metainfo_file_path: String) -> anyhow::Result<()> {
     if std::fs::metadata(&metainfo_file_path).is_ok() {
         std::fs::remove_file(&metainfo_file_path).context("删除文件失败")?;
-        return Ok(HttpResponse::Ok().content_type("application/xml").finish());
     }
-    Ok(HttpResponse::NotFound()
-        .content_type("application/xml")
-        .finish())
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
