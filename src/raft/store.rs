@@ -72,6 +72,7 @@ pub enum Request {
     InitChunk {
         bucket_name: String,
         object_key: String,
+        upload_id: String,
     },
     UploadChunk {
         part_number: String,
@@ -306,8 +307,9 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
                     Request::InitChunk {
                         bucket_name,
                         object_key,
+                        upload_id
                     } => {
-                        let _ = init_chunk(bucket_name, object_key).await;
+                        let _ = init_chunk(bucket_name, object_key, upload_id).await;
                     }
                     Request::UploadChunk {
                         part_number,
@@ -477,9 +479,7 @@ pub(crate) async fn upload_chunk(
 }
 
 // 初始化分片上传
-async fn init_chunk(bucket: String, object_key: String) -> anyhow::Result<()> {
-    let guid = Uuid::new_v4();
-    let upload_id = guid.to_string();
+async fn init_chunk(bucket: String, object_key: String, upload_id: String) -> anyhow::Result<()> {
     let file_size_dir = PathBuf::from(crate::api::DATA_DIR)
         .join("tmp")
         .join(&upload_id);

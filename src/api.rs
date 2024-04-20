@@ -23,6 +23,7 @@ use rayon::prelude::*;
 use serde::Deserialize;
 use std::fs::read_dir;
 use std::path::PathBuf;
+use uuid::Uuid;
 use zstd::zstd_safe::WriteBuf;
 use crate::util::cry;
 
@@ -275,23 +276,6 @@ pub async fn init_chunk_or_combine_chunk(
             .await
             .map_err(|err| anyhow!(err.to_string()))?;
 
-        let resp = InitiateMultipartUploadResult {
-            bucket: bucket_name,
-            object_key: object_name,
-            upload_id,
-        };
-        let xml = to_string(&resp).map_err(|err| anyhow!(err))?;
-        Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
-        //combine_chunk(&bucket_name, &object_name, &upload_id, cmu).await
-    } else {
-        state
-            .raft
-            .client_write(InitChunk {
-                bucket_name: bucket_name.clone(),
-                object_key: object_name.clone(),
-            })
-            .await
-            .map_err(|err| anyhow!(err.to_string()))?;
         let e_tag = cry::encrypt_by_md5(&format!("{}/{}", &bucket_name, &object_name));
         let res = CompleteMultipartUploadResult {
             bucket_name: bucket_name.to_string(),
@@ -299,6 +283,28 @@ pub async fn init_chunk_or_combine_chunk(
             etag: e_tag,
         };
         let xml = to_string(&res).map_err(|err| anyhow!(err))?;
+        Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
+        //combine_chunk(&bucket_name, &object_name, &upload_id, cmu).await
+    } else {
+        let guid = Uuid::new_v4();
+        let upload_id = guid.to_string();
+        info!("gen upload_id: {}", &upload_id);
+        state
+            .raft
+            .client_write(InitChunk {
+                bucket_name: bucket_name.clone(),
+                object_key: object_name.clone(),
+                upload_id: upload_id.clone()
+            })
+            .await
+            .map_err(|err| anyhow!(err.to_string()))?;
+        info!("init chunk upload done: {}", &upload_id);
+        let resp = InitiateMultipartUploadResult {
+            bucket: bucket_name,
+            object_key: object_name,
+            upload_id,
+        };
+        let xml = to_string(&resp).map_err(|err| anyhow!(err))?;
         Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
         //init_chunk(bucket_name, object_name).await
     }
@@ -336,20 +342,24 @@ pub async fn init_chunk_or_combine_chunk_longpath(
             })
             .await
             .map_err(|err| anyhow!(err.to_string()))?;
-        let resp = InitiateMultipartUploadResult {
-            bucket: bucket_name,
-            object_key,
-            upload_id,
+        let e_tag = cry::encrypt_by_md5(&format!("{}/{}", &bucket_name, &object_key));
+        let res = CompleteMultipartUploadResult {
+            bucket_name: bucket_name.to_string(),
+            object_key: object_key.to_string(),
+            etag: e_tag,
         };
-        let xml = to_string(&resp).map_err(|err| anyhow!(err))?;
+        let xml = to_string(&res).map_err(|err| anyhow!(err))?;
         Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
         //combine_chunk(&bucket_name, &object_key, &upload_id, cmu).await
     } else {
+        let guid = Uuid::new_v4();
+        let upload_id = guid.to_string();
         state
             .raft
             .client_write(InitChunk {
                 bucket_name: bucket_name.clone(),
                 object_key: object_key.clone(),
+                upload_id: upload_id.clone()
             })
             .await
             .map_err(|err| anyhow!(err.to_string()))?;
@@ -362,13 +372,12 @@ pub async fn init_chunk_or_combine_chunk_longpath(
         // )
         // .await
 
-        let e_tag = cry::encrypt_by_md5(&format!("{}/{}", &bucket_name, &object_key));
-        let res = CompleteMultipartUploadResult {
-            bucket_name: bucket_name.to_string(),
-            object_key: object_key.to_string(),
-            etag: e_tag,
+        let resp = InitiateMultipartUploadResult {
+            bucket: bucket_name,
+            object_key,
+            upload_id,
         };
-        let xml = to_string(&res).map_err(|err| anyhow!(err))?;
+        let xml = to_string(&resp).map_err(|err| anyhow!(err))?;
         Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
     }
 }
