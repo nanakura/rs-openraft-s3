@@ -1,12 +1,16 @@
 use crate::err::AppError;
 use crate::err::AppError::BadRequest;
 use crate::fs::UncompressStream;
-use crate::model::{Bucket, BucketWrapper, CompleteMultipartUploadResult, Content, HeadNotFoundResp, InitiateMultipartUploadResult, ListBucketResp, ListBucketResult, Owner};
+use crate::model::{
+    Bucket, BucketWrapper, CompleteMultipartUploadResult, Content, HeadNotFoundResp,
+    InitiateMultipartUploadResult, ListBucketResp, ListBucketResult, Owner,
+};
 use crate::raft::app::App;
 use crate::raft::store::Request::{
     CombineChunk, CopyFile, CreateBucket, DeleteBucket, DeleteFile, InitChunk, UploadChunk,
     UploadFile,
 };
+use crate::util::cry;
 use crate::util::date::date_format_to_second;
 use crate::{fs, HandlerResponse};
 use anyhow::{anyhow, Context};
@@ -25,7 +29,6 @@ use std::fs::read_dir;
 use std::path::PathBuf;
 use uuid::Uuid;
 use zstd::zstd_safe::WriteBuf;
-use crate::util::cry;
 
 pub(crate) const DATA_DIR: &str = "data";
 pub(crate) const BASIC_PATH_SUFFIX: &str = "buckets";
@@ -206,9 +209,12 @@ pub async fn create_bucket(
     let file_path = PathBuf::from(DATA_DIR)
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name);
-    state.raft.client_write(CreateBucket {
-        bucket_name: file_path.to_string_lossy().to_string(),
-    }).await
+    state
+        .raft
+        .client_write(CreateBucket {
+            bucket_name: file_path.to_string_lossy().to_string(),
+        })
+        .await
         .map_err(|err| anyhow!(err.to_string()))?;
     //std::fs::create_dir_all(file_path).context("创建桶失败")?;
     Ok(HttpResponse::Ok().finish())
@@ -271,7 +277,7 @@ pub async fn init_chunk_or_combine_chunk(
                 bucket_name: bucket_name.clone(),
                 object_key: object_name.clone(),
                 upload_id: upload_id.clone(),
-                cmu:body.to_string(),
+                cmu: body.to_string(),
             })
             .await
             .map_err(|err| anyhow!(err.to_string()))?;
@@ -294,7 +300,7 @@ pub async fn init_chunk_or_combine_chunk(
             .client_write(InitChunk {
                 bucket_name: bucket_name.clone(),
                 object_key: object_name.clone(),
-                upload_id: upload_id.clone()
+                upload_id: upload_id.clone(),
             })
             .await
             .map_err(|err| anyhow!(err.to_string()))?;
@@ -359,7 +365,7 @@ pub async fn init_chunk_or_combine_chunk_longpath(
             .client_write(InitChunk {
                 bucket_name: bucket_name.clone(),
                 object_key: object_key.clone(),
-                upload_id: upload_id.clone()
+                upload_id: upload_id.clone(),
             })
             .await
             .map_err(|err| anyhow!(err.to_string()))?;

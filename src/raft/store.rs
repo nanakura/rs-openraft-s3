@@ -7,11 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::api::{BASIC_PATH_SUFFIX, DATA_DIR};
+use crate::fs;
 use crate::fs::{save_metadata, split_file_ann_save, Metadata};
-use crate::model::{
-    CompleteMultipartUpload,
-};
-use crate::{fs};
+use crate::model::CompleteMultipartUpload;
 use byteorder::BigEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
@@ -46,7 +44,6 @@ use rocksdb::DB;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::RwLock;
-use uuid::Uuid;
 
 use crate::raft::typ;
 use crate::raft::Node;
@@ -307,7 +304,7 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
                     Request::InitChunk {
                         bucket_name,
                         object_key,
-                        upload_id
+                        upload_id,
                     } => {
                         let _ = init_chunk(bucket_name, object_key, upload_id).await;
                     }
@@ -328,8 +325,7 @@ impl RaftStateMachine<TypeConfig> for StateMachineStore {
                         upload_id,
                         cmu,
                     } => {
-                        let cmu: CompleteMultipartUpload =
-                            quick_xml::de::from_str(&cmu).unwrap();
+                        let cmu: CompleteMultipartUpload = quick_xml::de::from_str(&cmu).unwrap();
                         let _ = combine_chunk(&bucket_name, &object_key, &upload_id, cmu).await;
                     }
                     Request::DeleteFile { file_path } => {
@@ -417,7 +413,11 @@ async fn upload_file(metainfo_file_path: String, body: Vec<u8>) -> anyhow::Resul
 }
 
 // 桶间拷贝对象数据
-async fn copy_object(copy_source: &str, dest_bucket: &str, dest_object: &str) -> anyhow::Result<()> {
+async fn copy_object(
+    copy_source: &str,
+    dest_bucket: &str,
+    dest_object: &str,
+) -> anyhow::Result<()> {
     let mut copy_source = copy_source.to_string();
     if copy_source.contains('?') {
         copy_source = copy_source.split('?').next().unwrap().to_string();

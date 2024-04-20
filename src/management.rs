@@ -18,8 +18,7 @@ use crate::raft::NodeId;
 // --- Cluster management
 
 pub fn rest(cfg: &mut web::ServiceConfig) {
-    cfg
-        .route(
+    cfg.route(
         "/health",
         web::get().to(|| async { web::HttpResponse::Ok().body("ok") }),
     )
