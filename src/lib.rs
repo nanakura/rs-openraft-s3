@@ -9,9 +9,11 @@ use ntex::web;
 use ntex::web::HttpResponse;
 use ntex_cors::Cors;
 use openraft::Config;
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::net::TcpListener;
+use tokio::sync::Mutex;
 
 pub mod api;
 mod err;
@@ -29,6 +31,7 @@ pub async fn start_example_raft_node<P>(
     dir: P,
     http_addr: String,
     rpc_addr: String,
+    leader_http_addr: Option<String>,
 ) -> std::io::Result<()>
 where
     P: AsRef<Path>,
@@ -61,6 +64,8 @@ where
     .await
     .unwrap();
 
+    let mut set = BTreeSet::new();
+    set.insert(node_id);
     let app = App {
         id: node_id,
         api_addr: http_addr.clone(),
@@ -68,13 +73,14 @@ where
         raft,
         key_values: kvs,
         config,
+        nodes: Arc::new(Mutex::new(set)),
     };
 
     let echo_service = Arc::new(network::raft::Raft::new(Arc::new(app.clone())));
 
     let server = toy_rpc::Server::builder().register(echo_service).build();
 
-    let listener = TcpListener::bind(rpc_addr).await.unwrap();
+    let listener = TcpListener::bind(&rpc_addr).await.unwrap();
     tokio::spawn(async move {
         server.accept_websocket(listener).await.unwrap();
         info!("websocket server");
@@ -82,7 +88,7 @@ where
 
     // Create an application that will store all the instances created above, this will
     // be later used on the actix-web services.
-    let _ = web::HttpServer::new(move || {
+    let server_start = web::HttpServer::new(move || {
         info!("web server");
         let app = app.clone();
         web::App::new()
@@ -94,9 +100,40 @@ where
             .configure(management::rest)
             .configure(api::rest)
     })
-    .bind(http_addr)
+    .bind(&http_addr)
     .unwrap()
-    .run()
-    .await;
+    .run();
+
+    let client = reqwest::Client::new();
+    if let Some(addr) = leader_http_addr {
+        let response = client
+            .post(format!("http://{}/cluster/add-learner", addr))
+            .body(format!(
+                "[{}, \"{}\", \"{}\"]",
+                node_id, http_addr, rpc_addr
+            ))
+            .send()
+            .await
+            .unwrap();
+        info!("cluster add learner resp status {}", response.status());
+        let response = client
+            .post(format!("http://{}/cluster/change-membership", addr))
+            .send()
+            .await
+            .unwrap();
+        info!(
+            "cluster change membership resp status {}",
+            response.status()
+        );
+    } else {
+        let response = client
+            .post(format!("http://{}/cluster/init", http_addr))
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+        info!("cluster init resp status {}", response.status());
+    }
+    server_start.await?;
     Ok(())
 }
