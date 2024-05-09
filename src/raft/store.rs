@@ -433,11 +433,11 @@ async fn copy_object(
         res.push('/');
     }
     let src_object = &res;
-    let src_metadata_path = PathBuf::from(DATA_DIR)
+    let src_metadata_path = PathBuf::from(DATA_DIR.get().unwrap())
         .join(BASIC_PATH_SUFFIX)
         .join(src_bucket_name)
         .join(src_object);
-    let dest_metadata_path = PathBuf::from(DATA_DIR)
+    let dest_metadata_path = PathBuf::from(DATA_DIR.get().unwrap())
         .join(BASIC_PATH_SUFFIX)
         .join(dest_bucket)
         .join(dest_object);
@@ -459,7 +459,7 @@ pub(crate) async fn upload_chunk(
     }
     let hash_clone = hash;
     let len = body.len();
-    let part_path = PathBuf::from(DATA_DIR)
+    let part_path = PathBuf::from(DATA_DIR.get().unwrap())
         .join("tmp")
         .join(upload_id)
         .join(part_number);
@@ -473,11 +473,11 @@ pub(crate) async fn upload_chunk(
 
 // 初始化分片上传
 async fn init_chunk(bucket: String, object_key: String, upload_id: String) -> anyhow::Result<()> {
-    let file_size_dir = PathBuf::from(crate::api::DATA_DIR)
+    let file_size_dir = PathBuf::from(DATA_DIR.get().unwrap())
         .join("tmp")
         .join(&upload_id);
     let extension = &format!(".meta.{}", &upload_id);
-    let mut tmp_dir = PathBuf::from(crate::api::DATA_DIR)
+    let mut tmp_dir = PathBuf::from(DATA_DIR.get().unwrap())
         .join(crate::api::BASIC_PATH_SUFFIX)
         .join(&bucket)
         .join(&object_key)
@@ -518,7 +518,7 @@ async fn combine_chunk(
     let mut total_len: u64 = 0;
 
     let extension = &format!(".meta.{}", &upload_id);
-    let mut tmp_metadata_dir = PathBuf::from(crate::api::DATA_DIR)
+    let mut tmp_metadata_dir = PathBuf::from(DATA_DIR.get().unwrap())
         .join(crate::api::BASIC_PATH_SUFFIX)
         .join(bucket_name)
         .join(object_key)
@@ -536,7 +536,7 @@ async fn combine_chunk(
             check = false;
             break;
         }
-        let len_path = PathBuf::from(crate::api::DATA_DIR)
+        let len_path = PathBuf::from(DATA_DIR.get().unwrap())
             .join("tmp")
             .join(upload_id)
             .join(&format!("{}", part_etag.part_number));
@@ -559,7 +559,7 @@ async fn combine_chunk(
     metadata.chunks = chunks;
     metadata.time = Utc::now();
 
-    let mut metadata_dir = PathBuf::from(crate::api::DATA_DIR)
+    let mut metadata_dir = PathBuf::from(DATA_DIR.get().unwrap())
         .join(crate::api::BASIC_PATH_SUFFIX)
         .join(bucket_name)
         .join(object_key)
@@ -570,7 +570,7 @@ async fn combine_chunk(
     info!("保存新元数据成功");
     std::fs::remove_file(tmp_metadata_dir).context("删除临时元数据失败")?;
     std::fs::remove_dir_all(
-        PathBuf::from(crate::api::DATA_DIR)
+        PathBuf::from(DATA_DIR.get().unwrap())
             .join("tmp")
             .join(upload_id),
     )

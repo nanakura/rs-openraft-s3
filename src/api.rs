@@ -27,10 +27,11 @@ use rayon::prelude::*;
 use serde::Deserialize;
 use std::fs::read_dir;
 use std::path::PathBuf;
+use tokio::sync::OnceCell;
 use uuid::Uuid;
 use zstd::zstd_safe::WriteBuf;
 
-pub(crate) const DATA_DIR: &str = "data";
+pub(crate) static DATA_DIR: OnceCell<String> = OnceCell::const_new();
 pub(crate) const BASIC_PATH_SUFFIX: &str = "buckets";
 
 pub fn rest(cfg: &mut web::ServiceConfig) {
@@ -92,7 +93,7 @@ fn get_path_param(req: &web::HttpRequest, name: &str) -> Result<String, AppError
 
 // 获取所有桶的列表
 pub async fn list_bucket() -> HandlerResponse {
-    let dir_path = PathBuf::from(DATA_DIR).join(BASIC_PATH_SUFFIX);
+    let dir_path = PathBuf::from(DATA_DIR.get().unwrap()).join(BASIC_PATH_SUFFIX);
     let dir_path = dir_path.as_path();
     if dir_path.is_dir() {
         let mut res = Vec::new();
@@ -148,7 +149,7 @@ pub async fn get_bucket(
 ) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
 
-    let bucket_path = PathBuf::from(DATA_DIR)
+    let bucket_path = PathBuf::from(DATA_DIR.get().unwrap())
         .join(BASIC_PATH_SUFFIX)
         .join(&bucket_name);
     if let Ok(files) = std::fs::read_dir(&bucket_path) {
@@ -188,7 +189,7 @@ pub async fn get_bucket(
 // 查询桶是否存在
 pub async fn head_bucket(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
-    let file_path = PathBuf::from(DATA_DIR)
+    let file_path = PathBuf::from(DATA_DIR.get().unwrap())
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name);
     if file_path.as_path().is_dir() {
@@ -206,7 +207,7 @@ pub async fn create_bucket(
     state: web::types::State<App>,
 ) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
-    let file_path = PathBuf::from(DATA_DIR)
+    let file_path = PathBuf::from(DATA_DIR.get().unwrap())
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name);
     state
@@ -226,7 +227,7 @@ pub async fn delete_bucket(
     state: web::types::State<App>,
 ) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
-    let file_path = PathBuf::from(DATA_DIR)
+    let file_path = PathBuf::from(DATA_DIR.get().unwrap())
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name);
 
@@ -392,7 +393,7 @@ pub async fn init_chunk_or_combine_chunk_longpath(
 pub async fn head_object(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
-    let file_path = PathBuf::from(DATA_DIR)
+    let file_path = PathBuf::from(DATA_DIR.get().unwrap())
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
         .join(object_name);
@@ -417,7 +418,7 @@ pub async fn upload_file_or_upload_chunk(
 ) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
-    let file_path = PathBuf::from(DATA_DIR)
+    let file_path = PathBuf::from(DATA_DIR.get().unwrap())
         .join(BASIC_PATH_SUFFIX)
         .join(&bucket_name)
         .join(&object_name);
@@ -490,7 +491,7 @@ pub async fn upload_file_or_upload_chunk(
 pub async fn delete_file(req: web::HttpRequest, state: web::types::State<App>) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
-    let file_path = PathBuf::from(DATA_DIR)
+    let file_path = PathBuf::from(DATA_DIR.get().unwrap())
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
         .join(object_name);
@@ -512,7 +513,7 @@ pub async fn head_object_longpath(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
     let object_suffix: String = get_path_param(&req, "objectSuffix")?;
-    let file_path = PathBuf::from(DATA_DIR)
+    let file_path = PathBuf::from(DATA_DIR.get().unwrap())
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
         .join(object_name)
@@ -560,7 +561,7 @@ pub async fn upload_file_or_upload_chunk_longpath(
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
     let object_suffix: String = get_path_param(&req, "objectSuffix")?;
-    let file_path = PathBuf::from(DATA_DIR)
+    let file_path = PathBuf::from(DATA_DIR.get().unwrap())
         .join(BASIC_PATH_SUFFIX)
         .join(&bucket_name)
         .join(&object_name)
@@ -642,7 +643,7 @@ pub async fn delete_file_longpath(
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
     let object_suffix: String = get_path_param(&req, "objectSuffix")?;
-    let file_path = PathBuf::from(DATA_DIR)
+    let file_path = PathBuf::from(DATA_DIR.get().unwrap())
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
         .join(object_name)
@@ -663,7 +664,7 @@ pub async fn download_file_longpath(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
     let object_suffix: String = get_path_param(&req, "objectSuffix")?;
-    let file_path = PathBuf::from(DATA_DIR)
+    let file_path = PathBuf::from(DATA_DIR.get().unwrap())
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
         .join(object_name)
@@ -675,7 +676,7 @@ pub async fn download_file_longpath(req: web::HttpRequest) -> HandlerResponse {
 pub async fn download_file(req: web::HttpRequest) -> HandlerResponse {
     let bucket_name: String = get_path_param(&req, "bucket")?;
     let object_name: String = get_path_param(&req, "object")?;
-    let file_path = PathBuf::from(DATA_DIR)
+    let file_path = PathBuf::from(DATA_DIR.get().unwrap())
         .join(BASIC_PATH_SUFFIX)
         .join(bucket_name)
         .join(object_name);

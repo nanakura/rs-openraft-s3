@@ -12,7 +12,7 @@ use ntex_cors::Cors;
 use openraft::Config;
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -32,6 +32,7 @@ pub async fn start_example_raft_node<P>(
     dir: P,
     http_addr: String,
     rpc_addr: String,
+    fs_root: String,
     access_key: String,
     secret_key: String,
     leader_http_addr: Option<String>,
@@ -93,6 +94,14 @@ where
 
     // Create an application that will store all the instances created above, this will
     // be later used on the actix-web services.
+    api::DATA_DIR
+        .get_or_init(|| async {
+            PathBuf::from(fs_root.clone())
+                .join("data")
+                .to_string_lossy()
+                .to_string()
+        })
+        .await;
     let server_start = web::HttpServer::new(move || {
         info!("web server");
         let app = app.clone();

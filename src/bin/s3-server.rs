@@ -5,6 +5,7 @@ static ALLOC: MiMalloc = MiMalloc;
 use clap::Parser;
 use mimalloc::MiMalloc;
 use rs_s3_local::start_example_raft_node;
+use std::path::PathBuf;
 
 #[derive(Parser, Clone, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -18,11 +19,15 @@ pub struct Opt {
     #[clap(long, default_value_t = String::from("127.0.0.1:32001"))]
     pub rpc_addr: String,
 
+    #[clap(long, default_value_t = String::from("."))]
+    pub fs_root: String,
+
     #[clap(long)]
     pub leader_http_addr: Option<String>,
 
     #[clap(long, default_value_t = String::from("minioadmin"))]
     pub access_key: String,
+
     #[clap(long, default_value_t = String::from("minioadmin"))]
     pub secret_key: String,
 }
@@ -37,9 +42,13 @@ async fn main() -> anyhow::Result<()> {
 
     start_example_raft_node(
         options.id,
-        format!("{}-db", options.id),
+        PathBuf::from(options.fs_root.clone())
+            .join(format!("{}-db", options.id))
+            .to_string_lossy()
+            .to_string(),
         options.http_addr,
         options.rpc_addr,
+        options.fs_root,
         options.access_key,
         options.secret_key,
         options.leader_http_addr,
