@@ -1,12 +1,14 @@
 use log::debug;
-use std::any::Any;
 use std::fmt::Display;
+use std::net::SocketAddr;
 
+use crate::raft::Node;
+use crate::raft::NodeId;
+use crate::raft::TypeConfig;
 use openraft::error::InstallSnapshotError;
 use openraft::error::NetworkError;
 use openraft::error::RPCError;
 use openraft::error::RaftError;
-use openraft::error::RemoteError;
 use openraft::network::RPCOption;
 use openraft::network::RaftNetwork;
 use openraft::network::RaftNetworkFactory;
@@ -16,15 +18,9 @@ use openraft::raft::InstallSnapshotRequest;
 use openraft::raft::InstallSnapshotResponse;
 use openraft::raft::VoteRequest;
 use openraft::raft::VoteResponse;
-use openraft::AnyError;
 use serde::de::DeserializeOwned;
-use toy_rpc::pubsub::AckModeNone;
-use toy_rpc::Client;
-
-use super::raft::RaftClientStub;
-use crate::raft::Node;
-use crate::raft::NodeId;
-use crate::raft::TypeConfig;
+use volo_gen::rpc::raft::RaftRequest;
+use volo_thrift::ClientError;
 
 pub struct Network {}
 
@@ -34,34 +30,25 @@ impl RaftNetworkFactory<TypeConfig> for Network {
     type Network = NetworkConnection;
 
     async fn new_client(&mut self, target: NodeId, node: &Node) -> Self::Network {
-        let addr = format!("ws://{}", node.rpc_addr);
+        let addr: SocketAddr = node.rpc_addr.parse().unwrap();
 
-        let client = Client::dial_websocket(&addr).await.ok();
-        debug!("new_client: is_none: {}", client.is_none());
+        let client = volo_gen::rpc::raft::RaftServiceClientBuilder::new("raft-service")
+            .address(addr)
+            .build();
 
-        NetworkConnection {
-            addr,
-            client,
-            target,
-        }
+        NetworkConnection { client, target }
     }
 }
 
 pub struct NetworkConnection {
-    addr: String,
-    client: Option<Client<AckModeNone>>,
+    client: volo_gen::rpc::raft::RaftServiceClient,
     target: NodeId,
 }
 impl NetworkConnection {
     async fn c<E: std::error::Error + DeserializeOwned>(
         &mut self,
-    ) -> Result<&Client<AckModeNone>, RPCError<NodeId, Node, E>> {
-        if self.client.is_none() {
-            self.client = Client::dial_websocket(&self.addr).await.ok();
-        }
-        self.client
-            .as_ref()
-            .ok_or_else(|| RPCError::Network(NetworkError::from(AnyError::default())))
+    ) -> Result<&volo_gen::rpc::raft::RaftServiceClient, RPCError<NodeId, Node, E>> {
+        Ok(&self.client)
     }
 }
 
@@ -77,25 +64,10 @@ impl Display for ErrWrap {
 impl std::error::Error for ErrWrap {}
 
 fn to_error<E: std::error::Error + 'static + Clone>(
-    e: toy_rpc::Error,
-    target: NodeId,
+    e: ClientError,
+    _target: NodeId,
 ) -> RPCError<NodeId, Node, E> {
-    match e {
-        toy_rpc::Error::IoError(e) => RPCError::Network(NetworkError::new(&e)),
-        toy_rpc::Error::ParseError(e) => RPCError::Network(NetworkError::new(&ErrWrap(e))),
-        toy_rpc::Error::Internal(e) => {
-            let any: &dyn Any = &e;
-            let error: &E = any.downcast_ref().unwrap();
-            RPCError::RemoteError(RemoteError::new(target, error.clone()))
-        }
-        e @ (toy_rpc::Error::InvalidArgument
-        | toy_rpc::Error::ServiceNotFound
-        | toy_rpc::Error::MethodNotFound
-        | toy_rpc::Error::ExecutionError(_)
-        | toy_rpc::Error::Canceled(_)
-        | toy_rpc::Error::Timeout(_)
-        | toy_rpc::Error::MaxRetriesReached(_)) => RPCError::Network(NetworkError::new(&e)),
-    }
+    RPCError::Network(NetworkError::new(&e))
 }
 
 // With nightly-2023-12-20, and `err(Debug)` in the instrument macro, this gives the following lint
@@ -131,10 +103,17 @@ impl RaftNetwork<TypeConfig> for NetworkConnection {
         let c = self.c().await?;
         debug!("got connection");
 
-        let raft = c.raft();
-        debug!("got raft");
+        let req = postcard::to_stdvec(&req).unwrap();
+        let req = String::from_utf8(req).unwrap();
+        let x = c
+            .append(RaftRequest {
+                data: req.parse().unwrap(),
+            })
+            .await
+            .map_err(|e| to_error(e, self.target))?;
 
-        raft.append(req).await.map_err(|e| to_error(e, self.target))
+        let resp = postcard::from_bytes(x.data.as_bytes()).unwrap();
+        Ok(resp)
     }
 
     async fn install_snapshot(
@@ -146,12 +125,18 @@ impl RaftNetwork<TypeConfig> for NetworkConnection {
         RPCError<NodeId, Node, RaftError<NodeId, InstallSnapshotError>>,
     > {
         debug!("install_snapshot");
-        self.c()
+        let req = postcard::to_stdvec(&req).unwrap();
+        let req = String::from_utf8(req).unwrap();
+        let x = self
+            .c()
             .await?
-            .raft()
-            .snapshot(req)
+            .snapshot(RaftRequest {
+                data: req.parse().unwrap(),
+            })
             .await
-            .map_err(|e| to_error(e, self.target))
+            .map_err(|e| to_error(e, self.target))?;
+        let resp = postcard::from_bytes(x.data.as_bytes()).unwrap();
+        Ok(resp)
     }
 
     async fn vote(
@@ -160,11 +145,17 @@ impl RaftNetwork<TypeConfig> for NetworkConnection {
         _option: RPCOption,
     ) -> Result<VoteResponse<NodeId>, RPCError<NodeId, Node, RaftError<NodeId>>> {
         debug!("vote");
-        self.c()
+        let req = postcard::to_stdvec(&req).unwrap();
+        let req = String::from_utf8(req).unwrap();
+        let x = self
+            .c()
             .await?
-            .raft()
-            .vote(req)
+            .vote(RaftRequest {
+                data: req.parse().unwrap(),
+            })
             .await
-            .map_err(|e| to_error(e, self.target))
+            .map_err(|e| to_error(e, self.target))?;
+        let resp = postcard::from_bytes(x.data.as_bytes()).unwrap();
+        Ok(resp)
     }
 }

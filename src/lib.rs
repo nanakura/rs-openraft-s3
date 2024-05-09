@@ -1,18 +1,19 @@
 use crate::err::AppError;
 use crate::middleware::CredentialsV4;
 use crate::raft::app::App;
+use crate::raft::network::raft::Raft;
 use crate::raft::network::Network;
 use crate::raft::store::new_storage;
-use crate::raft::{network, NodeId};
+use crate::raft::NodeId;
 use log::info;
 use ntex::web;
 use ntex::web::HttpResponse;
 use ntex_cors::Cors;
 use openraft::Config;
 use std::collections::BTreeSet;
+use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
-use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 pub mod api;
@@ -31,6 +32,8 @@ pub async fn start_example_raft_node<P>(
     dir: P,
     http_addr: String,
     rpc_addr: String,
+    access_key: String,
+    secret_key: String,
     leader_http_addr: Option<String>,
 ) -> std::io::Result<()>
 where
@@ -76,14 +79,16 @@ where
         nodes: Arc::new(Mutex::new(set)),
     };
 
-    let echo_service = Arc::new(network::raft::Raft::new(Arc::new(app.clone())));
-
-    let server = toy_rpc::Server::builder().register(echo_service).build();
-
-    let listener = TcpListener::bind(&rpc_addr).await.unwrap();
+    let addr: SocketAddr = rpc_addr.parse().unwrap();
+    let raft_node = Raft::new(Arc::new(app.clone()));
     tokio::spawn(async move {
-        server.accept_websocket(listener).await.unwrap();
+        let addr = volo::net::Address::from(addr);
+
         info!("websocket server");
+        volo_gen::rpc::raft::RaftServiceServer::new(raft_node)
+            .run(addr)
+            .await
+            .unwrap();
     });
 
     // Create an application that will store all the instances created above, this will
@@ -96,7 +101,7 @@ where
             .wrap(ntex::web::middleware::Logger::default())
             .wrap(Cors::default())
             // 应用 AWS 签名版本 4 的认证中间件。
-            .wrap(CredentialsV4)
+            .wrap(CredentialsV4::new(access_key.clone(), secret_key.clone()))
             .configure(management::rest)
             .configure(api::rest)
     })

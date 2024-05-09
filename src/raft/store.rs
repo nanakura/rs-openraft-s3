@@ -144,7 +144,7 @@ impl RaftSnapshotBuilder<TypeConfig> for StateMachineStore {
 
         let kv_json = {
             let kvs = self.data.kvs.read().await;
-            serde_json::to_vec(&*kvs).map_err(|e| StorageIOError::read_state_machine(&e))?
+            postcard::to_stdvec(&*kvs).map_err(|e| StorageIOError::read_state_machine(&e))?
         };
 
         let snapshot_id = if let Some(last) = last_applied_log {
@@ -197,7 +197,7 @@ impl StateMachineStore {
         &mut self,
         snapshot: StoredSnapshot,
     ) -> Result<(), StorageError<NodeId>> {
-        let kvs: BTreeMap<String, String> = serde_json::from_slice(&snapshot.data)
+        let kvs: BTreeMap<String, String> = postcard::from_bytes(&snapshot.data)
             .map_err(|e| StorageIOError::read_snapshot(Some(snapshot.meta.signature()), &e))?;
 
         self.data.last_applied_log_id = snapshot.meta.last_log_id;
@@ -215,13 +215,13 @@ impl StateMachineStore {
             .map_err(|e| StorageError::IO {
                 source: StorageIOError::read(&e),
             })?
-            .and_then(|v| serde_json::from_slice(&v).ok()))
+            .and_then(|v| postcard::from_bytes(&v).ok()))
     }
 
     fn set_current_snapshot_(&self, snap: StoredSnapshot) -> StorageResult<()> {
         let store_tree = self.store();
         store_tree
-            .insert(b"snapshot", serde_json::to_vec(&snap).unwrap().as_slice())
+            .insert(b"snapshot", postcard::to_stdvec(&snap).unwrap().as_slice())
             .map_err(|e| StorageError::IO {
                 source: StorageIOError::write_snapshot(Some(snap.meta.signature()), &e),
             })?;
@@ -629,7 +629,7 @@ impl LogStore {
         Ok(store_tree
             .get(b"last_purged_log_id")
             .map_err(|e| StorageIOError::read(&e))?
-            .and_then(|v| serde_json::from_slice(&v).ok()))
+            .and_then(|v| postcard::from_bytes(&v).ok()))
     }
 
     fn set_last_purged_(&self, log_id: LogId<u64>) -> StorageResult<()> {
@@ -637,7 +637,7 @@ impl LogStore {
         store_tree
             .insert(
                 b"last_purged_log_id",
-                serde_json::to_vec(&log_id).unwrap().as_slice(),
+                postcard::to_stdvec(&log_id).unwrap().as_slice(),
             )
             .map_err(|e| StorageIOError::write(&e))?;
 
@@ -649,7 +649,7 @@ impl LogStore {
         &self,
         committed: &Option<LogId<NodeId>>,
     ) -> Result<(), StorageIOError<NodeId>> {
-        let json = serde_json::to_vec(committed).unwrap();
+        let json = postcard::to_stdvec(committed).unwrap();
         let store_tree = self.store();
         store_tree
             .insert(b"committed", json)
@@ -666,13 +666,13 @@ impl LogStore {
             .map_err(|e| StorageError::IO {
                 source: StorageIOError::read(&e),
             })?
-            .and_then(|v| serde_json::from_slice(&v).ok()))
+            .and_then(|v| postcard::from_bytes(&v).ok()))
     }
 
     fn set_vote_(&self, vote: &Vote<NodeId>) -> StorageResult<()> {
         let store_tree = self.store();
         store_tree
-            .insert(b"vote", serde_json::to_vec(vote).unwrap())
+            .insert(b"vote", postcard::to_stdvec(vote).unwrap())
             .map_err(|e| StorageError::IO {
                 source: StorageIOError::write_vote(&e),
             })?;
@@ -688,7 +688,7 @@ impl LogStore {
             .map_err(|e| StorageError::IO {
                 source: StorageIOError::write_vote(&e),
             })?
-            .and_then(|v| serde_json::from_slice(&v).ok()))
+            .and_then(|v| postcard::from_bytes(&v).ok()))
     }
 }
 
@@ -708,7 +708,7 @@ impl RaftLogReader<TypeConfig> for LogStore {
             .map(|res| {
                 let (id, val) = res.unwrap();
                 let entry: StorageResult<Entry<_>> =
-                    serde_json::from_slice(&val).map_err(|e| StorageError::IO {
+                    postcard::from_bytes(&val).map_err(|e| StorageError::IO {
                         source: StorageIOError::read_logs(&e),
                     });
                 let id = bin_to_id(&id);
@@ -787,7 +787,7 @@ impl RaftLogStorage<TypeConfig> for LogStore {
             log_tree
                 .insert(
                     id,
-                    serde_json::to_vec(&entry).map_err(|e| StorageIOError::write_logs(&e))?,
+                    postcard::to_stdvec(&entry).map_err(|e| StorageIOError::write_logs(&e))?,
                 )
                 .map_err(|e| StorageIOError::write_logs(&e))?;
         }

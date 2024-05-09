@@ -38,18 +38,29 @@ aes = "0.7.5"
 block-modes = "0.8.1"
 rkyv = { version = "0.7.44", default-features = false, features = ["std","size_64","validation", "bytecheck","alloc"] }
 openraft = { version = "0.9.5", features = ["serde", "storage-v2"] }
-toy-rpc = { version = "0.8.6", features = [
-    "ws_tokio",
-    "server",
-    "client",
-    "tokio_runtime",
-] }
 byteorder = "1.4.3"
 clap = { version = "4.1.11", features = ["derive", "env"] }
 reqwest = { version = "0.11.9", features = ["json"] }
 sled = "0.34.7"
+volo.workspace = true
+volo-gen = { path = "./volo-gen" }
+volo-thrift.workspace = true
+pilota.workspace = true
+postcard = { version = "1.0.7", features = ["use-std"] }
 
-
+[workspace]
+members = ["volo-gen"]
+resolver = "2"
+[workspace.package]
+edition = "2021"
+[workspace.dependencies]
+# we recommend to use the latest framework version for new features and bug fixes
+volo = "*"
+volo-build = "*"
+volo-thrift = "*"
+pilota = "*"
+anyhow = "1.0.82"
+tokio = { version = "1.35.1", features = ["full"] }
 [dev-dependencies]
 maplit = "1.0.2"
 tempfile = { version = "3.4.0" }

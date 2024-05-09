@@ -1,59 +1,61 @@
 use log::debug;
 use std::sync::Arc;
 
-use openraft::raft::AppendEntriesRequest;
-use openraft::raft::AppendEntriesResponse;
-use openraft::raft::InstallSnapshotRequest;
-use openraft::raft::InstallSnapshotResponse;
-use openraft::raft::VoteRequest;
-use openraft::raft::VoteResponse;
-use toy_rpc::macros::export_impl;
-
 use crate::raft::app::App;
-use crate::raft::TypeConfig;
 
 /// Raft protocol service.
 pub struct Raft {
     app: Arc<App>,
 }
 
-#[export_impl]
 impl Raft {
     pub fn new(app: Arc<App>) -> Self {
         Self { app }
     }
+}
 
-    #[export_method]
-    pub async fn vote(&self, vote: VoteRequest<u64>) -> Result<VoteResponse<u64>, toy_rpc::Error> {
-        self.app
-            .raft
-            .vote(vote)
-            .await
-            .map_err(|e| toy_rpc::Error::Internal(Box::new(e)))
-    }
-
-    #[export_method]
-    pub async fn append(
+impl volo_gen::rpc::raft::RaftService for Raft {
+    async fn vote(
         &self,
-        req: AppendEntriesRequest<TypeConfig>,
-    ) -> Result<AppendEntriesResponse<u64>, toy_rpc::Error> {
+        req: volo_gen::rpc::raft::RaftRequest,
+    ) -> Result<volo_gen::rpc::raft::RaftReply, volo_thrift::ServerError> {
+        let data = req.data.as_bytes();
+        let vote = postcard::from_bytes(data).unwrap();
+        let resp = self.app.raft.vote(vote).await.unwrap();
+        let result = postcard::to_stdvec(&resp).unwrap();
+        let result = String::from_utf8(result).unwrap();
+        Ok(volo_gen::rpc::raft::RaftReply {
+            data: result.parse().unwrap(),
+            error: Default::default(),
+        })
+    }
+    async fn append(
+        &self,
+        req: volo_gen::rpc::raft::RaftRequest,
+    ) -> Result<volo_gen::rpc::raft::RaftReply, volo_thrift::ServerError> {
         debug!("handle append");
-        self.app
-            .raft
-            .append_entries(req)
-            .await
-            .map_err(|e| toy_rpc::Error::Internal(Box::new(e)))
+        let data = req.data.as_bytes();
+        let req = postcard::from_bytes(data).unwrap();
+        let resp = self.app.raft.append_entries(req).await.unwrap();
+        let result = postcard::to_stdvec(&resp).unwrap();
+        let result = String::from_utf8(result).unwrap();
+        Ok(volo_gen::rpc::raft::RaftReply {
+            data: result.parse().unwrap(),
+            error: Default::default(),
+        })
     }
-
-    #[export_method]
-    pub async fn snapshot(
+    async fn snapshot(
         &self,
-        req: InstallSnapshotRequest<TypeConfig>,
-    ) -> Result<InstallSnapshotResponse<u64>, toy_rpc::Error> {
-        self.app
-            .raft
-            .install_snapshot(req)
-            .await
-            .map_err(|e| toy_rpc::Error::Internal(Box::new(e)))
+        req: volo_gen::rpc::raft::RaftRequest,
+    ) -> Result<volo_gen::rpc::raft::RaftReply, volo_thrift::ServerError> {
+        let data = req.data.as_bytes();
+        let req = postcard::from_bytes(data).unwrap();
+        let resp = self.app.raft.install_snapshot(req).await.unwrap();
+        let result = postcard::to_stdvec(&resp).unwrap();
+        let result = String::from_utf8(result).unwrap();
+        Ok(volo_gen::rpc::raft::RaftReply {
+            data: result.parse().unwrap(),
+            error: Default::default(),
+        })
     }
 }

@@ -7,18 +7,36 @@ use ntex::web;
 use ntex::web::HttpResponse;
 use std::collections::HashMap;
 
-pub struct CredentialsV4;
+pub struct CredentialsV4 {
+    access_key: String,
+    secret_key: String,
+}
+
+impl CredentialsV4 {
+    pub fn new(a: String, s: String) -> Self {
+        CredentialsV4 {
+            access_key: a,
+            secret_key: s,
+        }
+    }
+}
 
 impl<S> Middleware<S> for CredentialsV4 {
     type Service = CredentialsV4Middleware<S>;
 
     fn create(&self, service: S) -> Self::Service {
-        CredentialsV4Middleware { service }
+        CredentialsV4Middleware {
+            service,
+            access_key: self.access_key.clone(),
+            secret_key: self.secret_key.clone(),
+        }
     }
 }
 
 pub struct CredentialsV4Middleware<S> {
     service: S,
+    access_key: String,
+    secret_key: String,
 }
 
 impl<S, Err> Service<web::WebRequest<Err>> for CredentialsV4Middleware<S>
@@ -41,12 +59,10 @@ where
             return Ok(res);
         }
         // do filter here
-        let access_key_id = "minioadmin";
-        let secret_access_key = "minioadmin";
         let authorization = req.headers().get("Authorization");
         let mut flag = false;
         if authorization.is_some() {
-            match valid_authorization_header(&req, access_key_id, secret_access_key) {
+            match valid_authorization_header(&req, &self.access_key, &self.secret_key) {
                 Ok(b) => flag = b,
                 Err(err) => {
                     info!("middleware error: {}", err);
@@ -58,7 +74,7 @@ where
             let credential = url::form_urlencoded::parse(qs.as_bytes())
                 .find(|(key, _)| key == "X-Amz-Credential");
             if credential.is_some() {
-                match valid_authorization_url(&req, access_key_id, secret_access_key) {
+                match valid_authorization_url(&req, &self.access_key, &self.secret_key) {
                     Ok(b) => flag = b,
                     Err(err) => {
                         info!("middleware error: {}", err);
