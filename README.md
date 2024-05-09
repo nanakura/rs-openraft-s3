@@ -1,4 +1,5 @@
-# rs-s3-local
+# rs-openraft-s3
+An experimental generic S3 server
 
 ### Install
 ```shell
