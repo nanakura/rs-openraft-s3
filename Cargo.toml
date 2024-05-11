@@ -47,6 +47,7 @@ volo-gen = { path = "./volo-gen" }
 volo-thrift.workspace = true
 pilota.workspace = true
 postcard = { version = "1.0.7", features = ["use-std"] }
+memmap2 = "0.9.4"
 
 [workspace]
 members = ["volo-gen"]

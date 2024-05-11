@@ -3,10 +3,11 @@ use anyhow::Context;
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use hex::ToHex;
+use memmap2::Mmap;
 use ntex::util::{Bytes, BytesMut};
 use rkyv::{Archive, Deserialize, Infallible, Serialize};
 use sha2::{Digest, Sha256};
-use std::fs;
+use std::fs::{self, File};
 use std::io::{self, Cursor, Read};
 use std::path::{Path, PathBuf};
 use zstd::stream::read::Decoder;
@@ -82,8 +83,9 @@ pub(crate) fn compress_chunk(mut reader: impl std::io::Read) -> anyhow::Result<i
 
 // 解压分片
 fn decompress_chunk(chunk_path: &str) -> anyhow::Result<Vec<u8>> {
-    let chunk_file = fs::read(chunk_path)?;
-    let mut decoder = Decoder::new(chunk_file.as_slice())?;
+    let file = File::open(chunk_path)?;
+    let chunk_file = unsafe { Mmap::map(&file)? };
+    let mut decoder = Decoder::new(&chunk_file[..])?;
     let mut result = Vec::new();
     decoder.read_to_end(&mut result)?;
     Ok(result)
