@@ -41,11 +41,6 @@ pub struct InitiateMultipartUploadResult {
     pub upload_id: String,
 }
 
-// #[derive(Debug, Serialize, Deserialize)]
-// pub struct ListBucketsResult {
-//     pub buckets: Vec<Bucket>,
-// }
-
 // 文件列表
 #[derive(Debug, Serialize)]
 #[serde(rename = "ListBucketResult")]
@@ -68,7 +63,6 @@ pub struct Content {
     #[serde(rename = "Key")]
     pub key: String,
     #[serde(rename = "LastModified")]
-    //#[serde(serialize_with = "serialize_date", deserialize_with = "deserialize_date")]
     pub last_modified: DateTime<Utc>,
     #[serde(rename = "Size")]
     pub size: i64,

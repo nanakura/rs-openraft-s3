@@ -1,6 +1,6 @@
 use crate::err::AppError;
 use crate::err::AppError::BadRequest;
-use crate::fs::UncompressStream;
+use crate::fs::DecompressStream;
 use crate::model::{
     Bucket, BucketWrapper, CompleteMultipartUploadResult, Content, HeadNotFoundResp,
     InitiateMultipartUploadResult, ListBucketResp, ListBucketResult, Owner,
@@ -23,7 +23,6 @@ use ntex::web;
 use ntex::web::types::Query;
 use ntex::web::HttpResponse;
 use quick_xml::se::to_string;
-use rayon::prelude::*;
 use serde::Deserialize;
 use std::fs::read_dir;
 use std::path::PathBuf;
@@ -217,7 +216,6 @@ pub async fn create_bucket(
         })
         .await
         .map_err(|err| anyhow!(err.to_string()))?;
-    //std::fs::create_dir_all(file_path).context("创建桶失败")?;
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -240,14 +238,6 @@ pub async fn delete_bucket(
         .map_err(|err| anyhow!(err.to_string()))?;
 
     Ok(HttpResponse::Ok().finish())
-    // if std::fs::metadata(&file_path).is_ok() {
-    //     std::fs::remove_dir_all(&file_path).context("删除桶失败")?;
-    //     Ok(HttpResponse::Ok().content_type("application/xml").finish())
-    // } else {
-    //     Ok(HttpResponse::NotFound()
-    //         .content_type("application/xml")
-    //         .finish())
-    // }
 }
 
 #[derive(Deserialize)]
@@ -291,7 +281,6 @@ pub async fn init_chunk_or_combine_chunk(
         };
         let xml = to_string(&res).map_err(|err| anyhow!(err))?;
         Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
-        //combine_chunk(&bucket_name, &object_name, &upload_id, cmu).await
     } else {
         let guid = Uuid::new_v4();
         let upload_id = guid.to_string();
@@ -313,7 +302,6 @@ pub async fn init_chunk_or_combine_chunk(
         };
         let xml = to_string(&resp).map_err(|err| anyhow!(err))?;
         Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
-        //init_chunk(bucket_name, object_name).await
     }
 }
 
@@ -357,7 +345,6 @@ pub async fn init_chunk_or_combine_chunk_longpath(
         };
         let xml = to_string(&res).map_err(|err| anyhow!(err))?;
         Ok(HttpResponse::Ok().content_type("application/xml").body(xml))
-        //combine_chunk(&bucket_name, &object_key, &upload_id, cmu).await
     } else {
         let guid = Uuid::new_v4();
         let upload_id = guid.to_string();
@@ -370,14 +357,6 @@ pub async fn init_chunk_or_combine_chunk_longpath(
             })
             .await
             .map_err(|err| anyhow!(err.to_string()))?;
-        // init_chunk(
-        //     bucket_name,
-        //     PathBuf::from(object_name)
-        //         .join(object_suffix)
-        //         .to_string_lossy()
-        //         .to_string(),
-        // )
-        // .await
 
         let resp = InitiateMultipartUploadResult {
             bucket: bucket_name,
@@ -441,7 +420,6 @@ pub async fn upload_file_or_upload_chunk(
                 })
                 .await
                 .map_err(|err| anyhow!(err.to_string()))?;
-            //upload_chunk(&bucket_name, &object_name, &part_number, &upload_id, body).await
             Ok(HttpResponse::Ok().header("ETag", &hash).finish())
         }
         _ => {
@@ -455,12 +433,6 @@ pub async fn upload_file_or_upload_chunk(
                     })
                     .await
                     .map_err(|err| anyhow!(err.to_string()))?;
-                // copy_object(
-                //     copy_source.to_str().map_err(|_| BadRequest)?,
-                //     &bucket_name,
-                //     &object_name,
-                // )
-                // .await
                 Ok(HttpResponse::Ok().finish())
             } else {
                 let mut bytes = Vec::new();
@@ -480,7 +452,6 @@ pub async fn upload_file_or_upload_chunk(
                     })
                     .await
                     .map_err(|err| anyhow!(err.to_string()))?;
-                //upload_file(file_path, body).await
                 Ok(HttpResponse::Ok().finish())
             }
         }
@@ -504,7 +475,6 @@ pub async fn delete_file(req: web::HttpRequest, state: web::types::State<App>) -
         })
         .await
         .map_err(|err| anyhow!(err.to_string()))?;
-    //do_delete_file(file_path).await
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -590,7 +560,6 @@ pub async fn upload_file_or_upload_chunk_longpath(
                 })
                 .await
                 .map_err(|err| anyhow!(err.to_string()))?;
-            //upload_chunk(&bucket_name, &object_key, &part_number, &upload_id, body).await
             Ok(HttpResponse::Ok().header("ETag", &hash).finish())
         }
         _ => {
@@ -604,12 +573,6 @@ pub async fn upload_file_or_upload_chunk_longpath(
                     })
                     .await
                     .map_err(|err| anyhow!(err.to_string()))?;
-                // copy_object(
-                //     copy_source.to_str().map_err(|_| BadRequest)?,
-                //     &bucket_name,
-                //     &object_key,
-                // )
-                // .await
                 Ok(HttpResponse::Ok().finish())
             } else {
                 let mut bytes = Vec::new();
@@ -628,7 +591,6 @@ pub async fn upload_file_or_upload_chunk_longpath(
                     })
                     .await
                     .map_err(|err| anyhow!(err.to_string()))?;
-                //upload_file(file_path, body).await
                 Ok(HttpResponse::Ok().finish())
             }
         }
@@ -655,7 +617,6 @@ pub async fn delete_file_longpath(
         })
         .await
         .map_err(|err| anyhow!(err.to_string()))?;
-    //do_delete_file(file_path).await
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -688,8 +649,7 @@ async fn do_download_file(file_path: PathBuf) -> HandlerResponse {
     let mut metainfo_file_path = file_path.clone().to_string_lossy().to_string();
     metainfo_file_path.push_str(".meta");
     let meta_info = fs::load_metadata(&metainfo_file_path)?;
-    // let readers = multi_decompressed_reader(&meta_info.chunks[..]).await?;
-    let body = UncompressStream::new(meta_info.chunks);
+    let body = DecompressStream::new(meta_info.chunks);
     let content_disposition = format!("attachment; filename=\"{}\"", meta_info.name);
     Ok(web::HttpResponse::Ok()
         .header("Content-Type", "application/octet-stream")

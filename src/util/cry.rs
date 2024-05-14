@@ -48,7 +48,6 @@ pub fn aes_256_cbc_encrypt(data: &[u8]) -> anyhow::Result<Vec<u8>> {
 
 // 使用 AES-256-CBC 解密算法解密数据的函数。
 pub fn aes_256_cbc_decrypt(data: &[u8]) -> anyhow::Result<Vec<u8>> {
-    //let bytes = general_purpose::STANDARD.decode(data)?;
     let cipher = AesCbc::new_from_slices(DEFAULT_KEY.as_bytes(), &data[0..16])?;
     Ok(cipher.decrypt_vec(&data[16..])?)
 }
@@ -67,7 +66,6 @@ pub fn do_hmac_sha256(key: &[u8], data: &str) -> anyhow::Result<Vec<u8>> {
     let res = mac.finalize();
     let bytes = res.into_bytes();
     let x = &bytes[..];
-    //Ok(hex::encode(x))
     Ok(Vec::from(x))
 }
 

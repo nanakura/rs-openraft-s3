@@ -8,13 +8,12 @@ use std::sync::Arc;
 
 use crate::api::{BASIC_PATH_SUFFIX, DATA_DIR};
 use crate::fs;
-use crate::fs::{save_metadata, split_file_ann_save, Metadata};
+use crate::fs::{save_metadata, split_file_and_save, Metadata};
 use crate::model::CompleteMultipartUpload;
 use byteorder::BigEndian;
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
 use chrono::Utc;
-use futures::StreamExt;
 use log::{debug, info};
 use mime_guess::MimeGuess;
 use openraft::storage::LogFlushed;
@@ -393,7 +392,7 @@ async fn upload_file(metainfo_file_path: String, body: Vec<u8>) -> anyhow::Resul
         .first_or_text_plain()
         .to_string();
 
-    let (file_size, hashcodes) = split_file_ann_save(body, 8 << 20).await?;
+    let (file_size, hashcodes) = split_file_and_save(body, 8 << 20).await?;
     let metainfo = Metadata {
         name: file_name,
         size: file_size as u64,
@@ -467,7 +466,7 @@ pub(crate) async fn upload_chunk(
         .await
         .map_err(|err| anyhow!(err.to_string()))?;
     let body = fs::compress_chunk(std::io::Cursor::new(&body))?;
-    fs::save_file(&hash_clone, body)?;
+    fs::save_file(&hash_clone, std::io::Cursor::new(body)).await?;
     Ok(())
 }
 
