@@ -99,7 +99,7 @@ pub(crate) fn compress_chunk(mut reader: impl std::io::Read) -> anyhow::Result<V
 }
 
 // 解压分片
-fn decompress_chunk(chunk_path: &str) -> anyhow::Result<Vec<u8>> {
+fn decompress_chunk(chunk_path: impl AsRef<Path>) -> anyhow::Result<Vec<u8>> {
     let file = File::open(chunk_path)?;
     let chunk_file = unsafe { Mmap::map(&file)? };
     let mut decoder = Decoder::new(&chunk_file[..])?;
@@ -109,17 +109,17 @@ fn decompress_chunk(chunk_path: &str) -> anyhow::Result<Vec<u8>> {
 }
 
 // 保存元数据
-pub(crate) fn save_metadata(meta_file_path: &str, metadata: &Metadata) -> anyhow::Result<()> {
+pub(crate) fn save_metadata(meta_file_path: impl AsRef<Path>, metadata: &Metadata) -> anyhow::Result<()> {
     let meta_data = rkyv::to_bytes::<_, 256>(metadata)?;
     let meta_data = meta_data.as_slice();
-    fs::create_dir_all(Path::new(meta_file_path).parent().unwrap())?;
+    fs::create_dir_all(meta_file_path.as_ref().parent().unwrap())?;
     let meta_bytes = cry::aes_256_cbc_encrypt(meta_data)?;
     fs::write(meta_file_path, &meta_bytes)?;
     Ok(())
 }
 
 // 加载元数据
-pub(crate) fn load_metadata(meta_file_path: &str) -> anyhow::Result<Metadata> {
+pub(crate) fn load_metadata(meta_file_path: impl AsRef<Path>) -> anyhow::Result<Metadata> {
     let metadata_bytes = fs::read(meta_file_path).context("元数据地址不存在")?;
     let metadata_bytes = cry::aes_256_cbc_decrypt(&metadata_bytes)?;
     let archived = rkyv::check_archived_root::<Metadata>(&metadata_bytes[..]).unwrap();
@@ -151,7 +151,7 @@ impl Stream for DecompressStream {
             std::task::Poll::Ready(None)
         } else {
             let x = &self.hashes[self.idx];
-            let path = path_from_hash(x).to_string_lossy().to_string();
+            let path = path_from_hash(x);
             if let Ok(res) = decompress_chunk(&path) {
                 self.idx += 1;
                 std::task::Poll::Ready(Some(Ok(Bytes::from(res))))
