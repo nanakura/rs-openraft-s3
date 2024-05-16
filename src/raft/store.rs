@@ -466,7 +466,7 @@ pub(crate) async fn upload_chunk(
         .await
         .map_err(|err| anyhow!(err.to_string()))?;
     let body = fs::compress_chunk(std::io::Cursor::new(&body))?;
-    fs::save_file(&hash_clone, std::io::Cursor::new(body)).await?;
+    fs::save_file(&hash_clone, &body).await?;
     Ok(())
 }
 

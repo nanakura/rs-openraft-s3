@@ -3,13 +3,14 @@ use anyhow::Context;
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use hex::ToHex;
-use memmap2::Mmap;
+use memmap2::{Mmap, MmapOptions};
 use ntex::util::{Bytes, BytesMut};
 use rkyv::{Archive, Deserialize, Infallible, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
 use std::io::{self, Cursor, Read};
 use std::path::{Path, PathBuf};
+use tokio::fs::OpenOptions;
 use zstd::stream::read::Decoder;
 use zstd::zstd_safe::WriteBuf;
 
@@ -40,15 +41,33 @@ pub(crate) fn path_from_hash(hash: &str) -> PathBuf {
         .join(hash_suffix)
 }
 
+#[allow(dead_code)]
+async fn mmap_read_file(p: impl AsRef<Path>) -> io::Result<Vec<u8>> {
+    let file = tokio::fs::File::open(p).await?;
+    let mmap = unsafe { Mmap::map(&file)? };
+    Ok((&mmap[..]).to_vec())
+}
+
+async fn mmap_write_file(p: impl AsRef<Path>, content: &[u8]) -> io::Result<()> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(&p)
+        .await?;
+    file.set_len(content.len() as u64).await?;
+
+    let mut mmap = unsafe { MmapOptions::new().map_mut(&file).unwrap() };
+
+    mmap.copy_from_slice(content);
+    Ok(())
+}
+
 // 保存文件
-pub(crate) async fn save_file<R>(hash_code: &str, mut reader: R) -> anyhow::Result<()>
-where
-    R: tokio::io::AsyncRead + Unpin,
-{
+pub(crate) async fn save_file(hash_code: &str, data: &[u8]) -> anyhow::Result<()> {
     let file_path = path_from_hash(hash_code);
     tokio::fs::create_dir_all(file_path.parent().unwrap()).await?;
-    let mut file = tokio::fs::File::create(file_path).await?;
-    tokio::io::copy(&mut reader, &mut file).await?;
+    mmap_write_file(file_path, data).await?;
     Ok(())
 }
 
@@ -169,10 +188,8 @@ pub(crate) async fn split_file_and_save(
                 chunks.push(hash_code.clone());
 
                 if !is_path_exist(&hash_code) {
-                    let compressed_chunk = compress_chunk(std::io::Cursor::new(chunk)).unwrap();
-                    save_file(&hash_code, std::io::Cursor::new(compressed_chunk))
-                        .await
-                        .unwrap();
+                    let compressed_chunk = compress_chunk(std::io::Cursor::new(chunk))?;
+                    save_file(&hash_code, &compressed_chunk).await?;
                 }
             }
         }
@@ -184,10 +201,8 @@ pub(crate) async fn split_file_and_save(
                 chunks.push(hash_code.clone());
 
                 if !is_path_exist(&hash_code) {
-                    let compressed_chunk = compress_chunk(std::io::Cursor::new(chunk)).unwrap();
-                    save_file(&hash_code, std::io::Cursor::new(compressed_chunk))
-                        .await
-                        .unwrap();
+                    let compressed_chunk = compress_chunk(std::io::Cursor::new(chunk))?;
+                    save_file(&hash_code, &compressed_chunk).await?;
                 }
             }
             break;
