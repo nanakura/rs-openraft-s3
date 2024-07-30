@@ -48,6 +48,7 @@ volo-thrift.workspace = true
 pilota.workspace = true
 postcard = { version = "1.0.7", features = ["use-std"] }
 memmap2 = "0.9.4"
+reed-solomon-simd = "2.2.2"
 
 [workspace]
 members = ["volo-gen"]

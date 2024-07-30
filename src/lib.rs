@@ -10,6 +10,7 @@ use ntex::web;
 use ntex::web::HttpResponse;
 use ntex_cors::Cors;
 use openraft::Config;
+use raft::app::NodeDesc;
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -69,7 +70,14 @@ where
     .unwrap();
 
     let mut set = BTreeSet::new();
-    set.insert(node_id);
+    let node_desc = NodeDesc{
+        node_id,
+        api_addr: http_addr.clone(),
+        rpc_addr: rpc_addr.clone(),
+    };
+    set.insert(node_desc);
+    let mut set2 = BTreeSet::new();
+    set2.insert(node_id);
     let app = App {
         id: node_id,
         api_addr: http_addr.clone(),
@@ -77,7 +85,8 @@ where
         raft,
         key_values: kvs,
         config,
-        nodes: Arc::new(Mutex::new(set)),
+        nodes: Arc::new(Mutex::new(set2)),
+        node_descs: Arc::new(Mutex::new(set)),
     };
 
     let addr: SocketAddr = rpc_addr.parse().unwrap();
