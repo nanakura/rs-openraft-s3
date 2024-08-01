@@ -2058,9 +2058,9 @@ dependencies = [
 
 [[package]]
 name = "parking_lot"
-version = "0.12.1"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3742b2c103b9f06bc9fff0a37ff4912935851bee6d36f3c02bcc755bcfec228f"
+checksum = "f1bf18183cf54e8d6059647fc3063646a1801cf30896933ec2311622cc4b9a27"
 dependencies = [
  "lock_api",
  "parking_lot_core 0.9.9",
@@ -2699,6 +2699,7 @@ dependencies = [
  "ntex",
  "ntex-cors",
  "openraft",
+ "parking_lot 0.12.3",
  "pilota",
  "postcard",
  "quick-xml",
@@ -3052,7 +3053,7 @@ dependencies = [
  "faststr",
  "itoa",
  "page_size",
- "parking_lot 0.12.1",
+ "parking_lot 0.12.3",
  "ryu",
  "serde",
  "simdutf8",
@@ -3216,7 +3217,7 @@ dependencies = [
  "libc",
  "mio",
  "num_cpus",
- "parking_lot 0.12.1",
+ "parking_lot 0.12.3",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",
@@ -3619,7 +3620,7 @@ dependencies = [
  "metainfo",
  "motore",
  "num_enum",
- "parking_lot 0.12.1",
+ "parking_lot 0.12.3",
  "paste",
  "pilota",
  "pin-project",

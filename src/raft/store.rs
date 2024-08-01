@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context};
+use parking_lot::RwLock;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::io::Cursor;
@@ -37,7 +38,6 @@ use openraft::StoredMembership;
 use openraft::Vote;
 use serde::Deserialize;
 use serde::Serialize;
-use tokio::sync::RwLock;
 
 use crate::raft::typ;
 use crate::raft::Node;
@@ -142,7 +142,7 @@ impl RaftSnapshotBuilder<TypeConfig> for StateMachineStore {
         let last_membership = self.data.last_membership.clone();
 
         let kv_json = {
-            let kvs = self.data.kvs.read().await;
+            let kvs = self.data.kvs.read();
             postcard::to_stdvec(&*kvs).map_err(|e| StorageIOError::read_state_machine(&e))?
         };
 
@@ -201,7 +201,7 @@ impl StateMachineStore {
 
         self.data.last_applied_log_id = snapshot.meta.last_log_id;
         self.data.last_membership = snapshot.meta.last_membership.clone();
-        let mut x = self.data.kvs.write().await;
+        let mut x = self.data.kvs.write();
         *x = kvs;
 
         Ok(())

@@ -10,12 +10,12 @@ use ntex::web;
 use ntex::web::HttpResponse;
 use ntex_cors::Cors;
 use openraft::Config;
+use parking_lot::Mutex;
 use raft::app::NodeDesc;
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 pub mod api;
 mod err;
@@ -88,7 +88,6 @@ where
         nodes: Arc::new(Mutex::new(set2)),
         node_descs: Arc::new(Mutex::new(set)),
     };
-
     let addr: SocketAddr = rpc_addr.parse().unwrap();
     let raft_node = Raft::new(Arc::new(app.clone()));
     tokio::spawn(async move {

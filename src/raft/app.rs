@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use openraft::Config;
-use tokio::sync::{Mutex, RwLock};
+use parking_lot::{Mutex, RwLock};
 
 use crate::raft::ExampleRaft;
 use crate::raft::NodeId;

@@ -50,15 +50,15 @@ pub async fn add_learner(mut payload: Payload, state: web::types::State<App>) ->
         api_addr,
         rpc_addr,
     };
-    state.nodes.lock().await.insert(node_id);
-    state.node_descs.lock().await.insert(node_desc);
+    state.nodes.lock().insert(node_id);
+    state.node_descs.lock().insert(node_desc);
     let res = state.raft.add_learner(node_id, node, true).await;
     Ok(HttpResponse::Ok().json(&res))
 }
 
 /// Changes specified learners to members, or remove members.
 pub async fn change_membership(state: web::types::State<App>) -> HandlerResponse {
-    let x = state.nodes.lock().await;
+    let x = state.nodes.lock();
     let body = (*x).clone();
     let res = state.raft.change_membership(body, false).await;
     Ok(HttpResponse::Ok().json(&res))
