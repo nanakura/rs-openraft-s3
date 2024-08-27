@@ -70,7 +70,7 @@ where
     .unwrap();
 
     let mut set = BTreeSet::new();
-    let node_desc = NodeDesc{
+    let node_desc = NodeDesc {
         node_id,
         api_addr: http_addr.clone(),
         rpc_addr: rpc_addr.clone(),

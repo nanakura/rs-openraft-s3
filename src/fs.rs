@@ -109,7 +109,10 @@ fn decompress_chunk(chunk_path: impl AsRef<Path>) -> anyhow::Result<Vec<u8>> {
 }
 
 // 保存元数据
-pub(crate) fn save_metadata(meta_file_path: impl AsRef<Path>, metadata: &Metadata) -> anyhow::Result<()> {
+pub(crate) fn save_metadata(
+    meta_file_path: impl AsRef<Path>,
+    metadata: &Metadata,
+) -> anyhow::Result<()> {
     let meta_data = rkyv::to_bytes::<_, 256>(metadata)?;
     let meta_data = meta_data.as_slice();
     fs::create_dir_all(meta_file_path.as_ref().parent().unwrap())?;

@@ -43,9 +43,12 @@ pub async fn add_learner(mut payload: Payload, state: web::types::State<App>) ->
     }
     let (node_id, api_addr, rpc_addr): (NodeId, String, String) =
         serde_json::from_slice(&bytes).context("deserialize json failed")?;
-    let node = Node { rpc_addr: rpc_addr.clone(), api_addr: api_addr.clone() };
+    let node = Node {
+        rpc_addr: rpc_addr.clone(),
+        api_addr: api_addr.clone(),
+    };
 
-    let node_desc = NodeDesc{
+    let node_desc = NodeDesc {
         node_id,
         api_addr,
         rpc_addr,

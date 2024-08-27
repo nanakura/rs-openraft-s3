@@ -8,7 +8,6 @@ use parking_lot::{Mutex, RwLock};
 use crate::raft::ExampleRaft;
 use crate::raft::NodeId;
 
-
 #[derive(Clone, Eq, PartialEq)]
 pub struct NodeDesc {
     pub node_id: NodeId,
